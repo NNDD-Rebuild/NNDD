@@ -24,13 +24,14 @@ package org.mineap.nndd.util {
             //       http://www.nicovideo.jp/my/mylist/#/[MyListID]
             //       https://www.nicovideo.jp/mylist/[MyListID]
             //       https://www.nicovideo.jp/my/mylist/#/[MyListID]
-            if (matches = string.match(/^https?:\/\/www\.nicovideo\.jp\/(?:mylist|my\/mylist\/#)\/([1-9][0-9]*)$/)) {
+            if (matches = string.match(/^https?:\/\/www\.nicovideo\.jp\/(?:mylist|my\/mylist\/#)\/([1-9][0-9]*)(?:\?.*)?$/)) {
                 return matches[1];
             }
 
             // Case: http://www.nicovideo.jp/user/[UserID]/mylist/[MyListID]
             //       https://www.nicovideo.jp/user/[UserID]/mylist/[MyListID]
-            if (matches = string.match(/^https?:\/\/www\.nicovideo\.jp\/user\/[1-9][0-9]*\/mylist\/([1-9][0-9]*)$/)) {
+            //       (with optional query string e.g. ?ref=pc_mypage_follow_mylist)
+            if (matches = string.match(/^https?:\/\/www\.nicovideo\.jp\/user\/[1-9][0-9]*\/mylist\/([1-9][0-9]*)(?:\?.*)?$/)) {
                 return matches[1];
             }
 

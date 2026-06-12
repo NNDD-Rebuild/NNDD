@@ -191,6 +191,68 @@ package org.mineap.nndd.ranking {
         }
 
         /**
+         * nvapi JSON レスポンスからランキング一覧を生成します。
+         * NNDD-RE RankingClient.fetchViaNvapi() 相当の処理。
+         */
+        public function getRankingArrayCollectionFromJson(jsonStr: String): ArrayCollection {
+            var arrayCollection: ArrayCollection = new ArrayCollection();
+
+            var json: Object;
+            try {
+                json = JSON.parse(jsonStr);
+            } catch (e: Error) {
+                return arrayCollection;
+            }
+
+            var items: Array = json.data ? json.data.items as Array : null;
+            if (items == null) {
+                return arrayCollection;
+            }
+
+            var index: int = 0;
+            for each (var item: Object in items) {
+                var ranking: int = ++index;
+                var videoId: String = item.id;
+                var title: String = item.title;
+
+                var thumbImgUrl: String = "";
+                if (item.thumbnail) {
+                    thumbImgUrl = item.thumbnail.middleUrl || item.thumbnail.url || "";
+                }
+
+                var duration: int = item.duration ? int(item.duration) : 0;
+                var minutes: int = Math.floor(duration / 60);
+                var seconds: int = duration % 60;
+                var lengthStr: String = "    再生時間 " + minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+
+                var nicoVideoUrl: String = "https://www.nicovideo.jp/watch/" + videoId;
+
+                var libraryManager: ILibraryManager = LibraryManagerBuilder.instance.libraryManager;
+                var nnddVideo: NNDDVideo = libraryManager.isExistByVideoId(videoId);
+                var condition: String = "";
+                var downloadedItemUrl: String = "";
+                if (nnddVideo != null) {
+                    condition = "動画保存済み\n右クリックから再生できます。";
+                    downloadedItemUrl = nnddVideo.getDecodeUrl();
+                }
+
+                arrayCollection.addItem({
+                    dataGridColumn_preview: thumbImgUrl,
+                    dataGridColumn_ranking: ranking,
+                    dataGridColumn_videoName: title + "\n" + lengthStr,
+                    dataGridColumn_videoInfo: "...取得中",
+                    dataGridColumn_condition: condition,
+                    dataGridColumn_downloadedItemUrl: downloadedItemUrl,
+                    dataGridColumn_nicoVideoUrl: nicoVideoUrl
+                });
+
+                getThumbInfoAsync(videoId, arrayCollection, arrayCollection.length - 1);
+            }
+
+            return arrayCollection;
+        }
+
+        /**
          * カテゴリの一覧を返します。
          *
          * @return

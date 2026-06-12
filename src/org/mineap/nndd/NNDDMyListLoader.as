@@ -52,6 +52,8 @@ package org.mineap.nndd {
         private var _libraryManager: ILibraryManager;
 
         private var _myListId: String;
+        private var _myListUseV2: Boolean = false;
+        private var _userSession: String = null;
         private var _channelId: String;
         private var _communityId: String;
         private var _uploadUserId: String;
@@ -127,6 +129,9 @@ package org.mineap.nndd {
             trace("start - requestDownload(" + user + ", ****, mylist/" + id + ")");
 
             this._myListId = id;
+            this._myListUseV2 = false;
+            this._currentPage = 1;
+            this._retryCount = 0;
 
             login(user, password);
         }
@@ -199,7 +204,7 @@ package org.mineap.nndd {
                 LogManager.instance.addLog("\t\t" + HTTPStatusEvent.HTTP_RESPONSE_STATUS + ":" + event);
             });
 
-            this._login.login(user, password);
+            this._login.login(user, password, null, null, Login.LOGIN_URL, true, false);
         }
 
         /**
@@ -211,6 +216,8 @@ package org.mineap.nndd {
 
             //ログイン成功通知
             trace(LOGIN_SUCCESS + ":" + event);
+            this._userSession = this._login.userSession;
+            LogManager.instance.addLog("user_session captured: " + (this._userSession != null ? "yes" : "no"));
             dispatchEvent(new Event(LOGIN_SUCCESS));
 
             if (enableNNDDServer) {
@@ -312,12 +319,31 @@ package org.mineap.nndd {
 
         protected function loadRss(): void {
             if (this._myListId != null) {
+                var useV2: Boolean = this._myListUseV2;
+                var vLabel: String = useV2 ? "v2" : "v1";
+                LogManager.instance.addLog("MyList requesting(" + vLabel + "): mylist/" + this._myListId + " page=" + this._currentPage);
+
                 this._publicMyListLoader = new PublicMyListLoader();
                 this._publicMyListLoader.addEventListener(Event.COMPLETE, getXMLSuccess);
                 this._publicMyListLoader.addEventListener(IOErrorEvent.IO_ERROR, xmlLoadIOErrorHandler);
                 this._publicMyListLoader.addEventListener(SecurityErrorEvent.SECURITY_ERROR, xmlLoadIOErrorHandler);
+                this._publicMyListLoader.addEventListener(HTTPStatusEvent.HTTP_RESPONSE_STATUS, function(e: HTTPStatusEvent): void {
+                    LogManager.instance.addLog("MyList HTTP status=" + e.status + " url=" + e.responseURL);
+                    if (!_myListUseV2 && (e.status == 404 || e.status == 401 || e.status == 403)) {
+                        (e.target as PublicMyListLoader).removeEventListener(Event.COMPLETE, getXMLSuccess);
+                        (e.target as PublicMyListLoader).removeEventListener(IOErrorEvent.IO_ERROR, xmlLoadIOErrorHandler);
+                        (e.target as PublicMyListLoader).removeEventListener(SecurityErrorEvent.SECURITY_ERROR, xmlLoadIOErrorHandler);
+                        _myListUseV2 = true;
+                        LogManager.instance.addLog("MyList v1 status=" + e.status + ", fallback to v2");
+                        setTimeout(loadRss, 0);
+                    }
+                });
 
-                this._publicMyListLoader.getMyList(this._myListId);
+                if (useV2) {
+                    this._publicMyListLoader.getMyListV2(this._myListId, this._currentPage, this._userSession);
+                } else {
+                    this._publicMyListLoader.getMyList(this._myListId, this._currentPage, this._userSession);
+                }
             } else if (this._channelId != null) {
                 this._channelLoader = new ChannelLoader();
                 this._channelLoader.addEventListener(Event.COMPLETE, getXMLSuccess);
@@ -381,11 +407,107 @@ package org.mineap.nndd {
          * @param event
          *
          */
+        /**
+         * nvapi v2 JSONレスポンスをRSS XML形式に変換します。
+         */
+        private function jsonMyListToXml(json: String): XML {
+            var data: Object = JSON.parse(json);
+            var mylistData: Object = data.data.mylist;
+            var name: String = mylistData != null && mylistData.name != null ? String(mylistData.name) : "";
+            var rawItems: Array = (mylistData != null && mylistData.items != null)
+                ? mylistData.items as Array
+                : (data.data != null && data.data.items != null ? data.data.items as Array : []);
+
+            var rss: XML = <rss version="2.0"/>;
+            var channel: XML = <channel/>;
+            var chTitle: XML = <title/>;
+            chTitle.appendChild(name);
+            channel.appendChild(chTitle);
+            var chLink: XML = <link/>;
+            chLink.appendChild("https://www.nicovideo.jp/mylist/" + this._myListId);
+            channel.appendChild(chLink);
+
+            for each (var item: Object in rawItems) {
+                var video: Object = item.video;
+                if (video == null) continue;
+
+                var videoId: String = video.id != null ? String(video.id) : "";
+                var title: String = video.title != null ? String(video.title) : "";
+                var duration: int = video.duration != null ? int(video.duration) : 0;
+                var registeredAt: String = video.registeredAt != null ? String(video.registeredAt) : "";
+                var thumbUrl: String = (video.thumbnail != null && video.thumbnail.url != null)
+                    ? String(video.thumbnail.url) : "";
+                var memo: String = item.description != null ? String(item.description) : "";
+                var watchUrl: String = "https://www.nicovideo.jp/watch/" + videoId;
+
+                // 再生時間 MM:SS 形式
+                var minutes: int = Math.floor(duration / 60);
+                var seconds: int = duration % 60;
+                var lengthStr: String = minutes + ":" + (seconds < 10 ? "0" + seconds : String(seconds));
+
+                // 投稿日時: ISO8601 → 「YYYY年MM月DD日 HH：MM：SS」形式
+                var dateStr: String = "";
+                if (registeredAt.length > 0) {
+                    var d: Date = new Date(registeredAt);
+                    if (!isNaN(d.time)) {
+                        var yr: String = String(d.fullYear);
+                        var mo: String = d.month + 1 < 10 ? "0" + String(d.month + 1) : String(d.month + 1);
+                        var dy: String = d.date < 10 ? "0" + String(d.date) : String(d.date);
+                        var hh: String = d.hours < 10 ? "0" + String(d.hours) : String(d.hours);
+                        var mm: String = d.minutes < 10 ? "0" + String(d.minutes) : String(d.minutes);
+                        var ss: String = d.seconds < 10 ? "0" + String(d.seconds) : String(d.seconds);
+                        dateStr = yr + "年" + mo + "月" + dy + "日 " + hh + "：" + mm + "：" + ss;
+                    }
+                }
+
+                // description CDATA (MyListBuilder の NicoPattern に合わせた形式)
+                var cdataContent: String = "";
+                if (memo.length > 0) {
+                    cdataContent += '<p class="nico-memo">' + memo + '</p>';
+                }
+                if (thumbUrl.length > 0) {
+                    cdataContent += '<p class="nico-thumbnail"><img src="' + thumbUrl + '" /></p>';
+                }
+                cdataContent += '<p class="nico-info"><small>' +
+                    '<strong class="nico-info-length">' + lengthStr + '</strong>｜' +
+                    '<strong class="nico-info-date">' + dateStr + '</strong> 投稿</small></p>';
+
+                var itemXml: XML = <item/>;
+                var itemTitle: XML = <title/>;
+                itemTitle.appendChild(title);
+                itemXml.appendChild(itemTitle);
+                var itemLink: XML = <link/>;
+                itemLink.appendChild(watchUrl);
+                itemXml.appendChild(itemLink);
+                var itemGuid: XML = <guid/>;
+                itemGuid.@isPermaLink = "true";
+                itemGuid.appendChild(watchUrl);
+                itemXml.appendChild(itemGuid);
+                itemXml.appendChild(new XML("<description><![CDATA[" + cdataContent + "]]></description>"));
+
+                channel.appendChild(itemXml);
+            }
+
+            rss.appendChild(channel);
+            return rss;
+        }
+
         private function getXMLSuccess(event: Event): void {
 //			trace((event.target as URLLoader).data);
 
             try {
-                var xml: XML = new XML((event.target as URLLoader).data);
+                var rawData: String = String((event.target as URLLoader).data);
+                var xml: XML;
+                if (this._myListId != null) {
+                    var trimmed: String = rawData.replace(/^\s+/, "");
+                    if (trimmed.length > 0 && trimmed.charAt(0) == '{') {
+                        xml = jsonMyListToXml(rawData);
+                    } else {
+                        xml = new XML(rawData);
+                    }
+                } else {
+                    xml = new XML(rawData);
+                }
                 var items: XMLList = xml.child("channel")[0].child("item");
                 var next: Boolean = items.length() > 0;
                 if (this._xml == null) {

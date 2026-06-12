@@ -590,6 +590,7 @@ package org.mineap.nndd.player.comment {
                     commentUeTextArray[i].vpos = vpos;
                     commentUeTextArray[i].no = no;
                     commentUeTextArray[i].mail = mail;
+                    commentUeTextArray[i].duration = new Command().getDuration(mail);
                     commentUeTextArray[i].visible = true;
                     commentUeTextArray[i].setStyle("color", color);
 
@@ -667,6 +668,7 @@ package org.mineap.nndd.player.comment {
                     commentShitaTextArray[i].vpos = vpos;
                     commentShitaTextArray[i].no = no;
                     commentShitaTextArray[i].mail = mail;
+                    commentShitaTextArray[i].duration = new Command().getDuration(mail);
                     commentShitaTextArray[i].visible = true;
                     commentShitaTextArray[i].setStyle("color", color);
 
@@ -766,7 +768,7 @@ package org.mineap.nndd.player.comment {
 
             if ((event.target as NNDDText).pos == Command.UE) {
                 var newY: int = (event.target as NNDDText).nnddText.y + (event.target as NNDDText).nnddText.textHeight;
-                (event.target as NNDDText).y = (int)(newY + (event.target as NNDDText).textHeight);
+                (event.target as NNDDText).y = (int)(newY);
             } else if ((event.target as NNDDText).pos == Command.SHITA) {
                 var newY: int = (event.target as NNDDText).nnddText.y;
                 (event.target as NNDDText).y = (int)(newY - (event.target as NNDDText).textHeight);
@@ -788,17 +790,10 @@ package org.mineap.nndd.player.comment {
                         }
                     }
 
-//					var dist:int = (event.target as Text).textHeight - (event.target as Text).parent.height;
-//					if(dist > 0){
-//						var newY:int = (-1)*(dist/2);
-//						(event.target as NNDDText).y = newY;
-//					}
-
-                    if ((event.target as NNDDText).size != Command.BIG) {
-                        var size: int = (event.target as Text).getStyle("fontSize") * 0.9;
-                        (event.target as Text).setStyle("fontSize", size);
-                        (event.target as Text).visible = false;
-                    } else {
+                    var currentSize: int = (event.target as Text).getStyle("fontSize");
+                    var newSize: int = int(currentSize * 0.9);
+                    if (newSize < 8) {
+                        // 最小サイズ到達 → そのまま表示
                         (event.target as Text).alpha = this._commentAlpha;
                         (event.target as Text).removeEventListener(
                             FlexEvent.UPDATE_COMPLETE,
@@ -806,6 +801,10 @@ package org.mineap.nndd.player.comment {
                         );
                         (event.target as Text).setConstraintValue("horizontalCenter", 0);
                         (event.target as Text).visible = true;
+                    } else {
+                        // 縮小して再レイアウト待ち (visible=falseでもFlex更新サイクルは継続する)
+                        (event.target as Text).setStyle("fontSize", newSize);
+                        (event.target as Text).visible = false;
                     }
 
                 } else {
@@ -849,8 +848,11 @@ package org.mineap.nndd.player.comment {
             }
 
             for (i = 0; i < commentShitaTextArray.length; i++) {
+                var shitaInterval: int = (commentShitaTextArray[i].duration >= 0)
+                    ? commentShitaTextArray[i].duration * 1000
+                    : showInterval;
                 if (commentShitaTextArray[i].vpos != -1 && commentShitaTextArray[i].vpos * 10 < nowvpos -
-                    showInterval) {
+                    shitaInterval) {
                     commentShitaTextArray[i].vpos = -1;
                     commentShitaTextArray[i].text = "";
                     commentShitaTextArray[i].no = 0;
@@ -863,7 +865,10 @@ package org.mineap.nndd.player.comment {
             }
 
             for (i = 0; i < commentUeTextArray.length; i++) {
-                if (commentUeTextArray[i].vpos != -1 && commentUeTextArray[i].vpos * 10 < nowvpos - showInterval) {
+                var ueInterval: int = (commentUeTextArray[i].duration >= 0)
+                    ? commentUeTextArray[i].duration * 1000
+                    : showInterval;
+                if (commentUeTextArray[i].vpos != -1 && commentUeTextArray[i].vpos * 10 < nowvpos - ueInterval) {
                     commentUeTextArray[i].vpos = -1;
                     commentUeTextArray[i].text = "";
                     commentUeTextArray[i].no = 0;

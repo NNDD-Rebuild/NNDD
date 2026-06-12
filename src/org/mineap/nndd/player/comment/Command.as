@@ -236,6 +236,13 @@ package org.mineap.nndd.player.comment {
                         return Command.COLLOR_PREMIUM_VALUE_ARRAY[index] as int;
                     }
                 }
+
+                // #RRGGBB 形式のカラーコード
+                var hexPattern: RegExp = /#([0-9A-Fa-f]{6})\b/;
+                var hexResult: Array = hexPattern.exec(color);
+                if (hexResult != null) {
+                    return int("0x" + hexResult[1]);
+                }
             }
 
             return -1;
@@ -421,6 +428,19 @@ package org.mineap.nndd.player.comment {
             }
 
             return iAnalyzeResult;
+        }
+
+        /**
+         * mail フィールドから @数字 形式の表示秒数を取得します。
+         * @return 秒数。指定なしの場合は -1。
+         */
+        public function getDuration(mail: String): int {
+            var pattern: RegExp = /@(\d+)/;
+            var result: Array = pattern.exec(mail);
+            if (result != null && result.length > 1) {
+                return int(result[1]);
+            }
+            return -1;
         }
 
     }

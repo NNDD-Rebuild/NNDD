@@ -40,6 +40,8 @@ private var seekTimer: Timer = null;
 
 private var isRollOn: Boolean = false;
 
+private var _sliderPressing: Boolean = false;
+
 /**
  *
  * @param playerController
@@ -64,6 +66,31 @@ public function init(
         timer = new Timer(100);
         timer.addEventListener(TimerEvent.TIMER, hideController);
         timer.start();
+    }
+
+    // ffmpeg再生時のトラッククリックseekを拾うため、スライダの押下状態を監視する
+    if (slider_timeline != null) {
+        slider_timeline.addEventListener(MouseEvent.MOUSE_DOWN, onSliderMouseDown);
+        // トラッククリックを即座にクリック位置へ移動させ、単一CHANGEにする
+        try { slider_timeline.setStyle("slideDuration", 0); } catch (e: Error) {}
+    }
+}
+
+public function isSliderPressing(): Boolean {
+    return _sliderPressing;
+}
+
+private function onSliderMouseDown(event: MouseEvent): void {
+    _sliderPressing = true;
+    if (this.stage != null) {
+        this.stage.addEventListener(MouseEvent.MOUSE_UP, onSliderMouseUp);
+    }
+}
+
+private function onSliderMouseUp(event: MouseEvent): void {
+    _sliderPressing = false;
+    if (this.stage != null) {
+        this.stage.removeEventListener(MouseEvent.MOUSE_UP, onSliderMouseUp);
     }
 }
 
@@ -249,6 +276,16 @@ private function thumbRelease(event: SliderEvent): void {
 }
 
 private function sliderTimelineChanged(evt: SliderEvent): void {
+    // ffmpeg再生時はプログラムによるvalue代入でもCHANGEが飛ぶため、
+    // CHANGE経由のseekを無視する。ユーザー操作はthumbRelease/mouseWheelで拾う。
+    if (this.playerController.isFfmpegPlaying()) {
+        // トラッククリック (サムドラッグでない) 時のみ即seek。
+        // サムドラッグはthumbReleaseで処理。プログラム代入は押下なしなので無視。
+        if (_sliderPressing && !this.playerController.sliderChanging) {
+            this.playerController.seek(evt.value);
+        }
+        return;
+    }
     if (this.playerController.sliderChanging) {
         this.slider_timeline.value = evt.value;
     } else {

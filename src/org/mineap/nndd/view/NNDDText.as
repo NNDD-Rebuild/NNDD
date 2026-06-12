@@ -47,6 +47,11 @@ package org.mineap.nndd.view {
         public var mail: String = "";
 
         /**
+         * @xxx コマンドで指定された表示秒数です。-1 はグローバル設定を使用します。
+         */
+        public var duration: int = -1;
+
+        /**
          * このNNDDTextの表示位置を決定する際に必要になるNNDDTextへの参照です。
          */
         public var nnddText: NNDDText = null;

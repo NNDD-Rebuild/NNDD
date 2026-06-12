@@ -66,9 +66,12 @@ package org.mineap.nndd.myList {
 
         private function myListGroupGetSuccessEventHandler(event: Event): void {
 
+            var rawData: String = String(this._myListGroupLoader.data);
+            LogManager.instance.addLog("MyListGroup raw(500): " + rawData.substr(0, 500));
+
             var myListGroupAnalyzer: MyListGroupAnalyzer = new MyListGroupAnalyzer();
 
-            myListGroupAnalyzer.analyzer(String(this._myListGroupLoader.data));
+            myListGroupAnalyzer.analyzer(rawData);
 
             if (myListGroupAnalyzer.result == MyListGroupAnalyzer.OK) {
 

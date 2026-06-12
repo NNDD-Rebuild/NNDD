@@ -8,6 +8,8 @@
 
     <mx:Script>
 		<![CDATA[
+        import flash.filesystem.File;
+
         import mx.controls.Alert;
         import mx.managers.PopUpManager;
 

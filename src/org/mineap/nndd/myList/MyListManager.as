@@ -481,7 +481,7 @@ package org.mineap.nndd.myList {
                         myList.type = RssType.CHANNEL;
                     }
                     if ((temp.@type != null && temp.@type == RssType.USER_UPLOAD_VIDEO.toString()) ||
-                        (url != null && url.indexOf("user/") != -1)) {
+                        (url != null && MyListUtil.getUserUploadVideoListId(url) != null)) {
                         myList.type = RssType.USER_UPLOAD_VIDEO;
                     }
 
