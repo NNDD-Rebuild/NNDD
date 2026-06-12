@@ -205,10 +205,6 @@ private var isAutoDownload: Boolean = true;
 
 private var isRankingWatching: Boolean = true;
 
-private var isEnableEcoCheck: Boolean = true;
-
-private var isSkipEconomy: Boolean = false;
-
 private var isShowOnlyNowLibraryTag: Boolean = true;
 
 private var isOutStreamingPlayerUse: Boolean = false;
@@ -228,8 +224,6 @@ private var isCtrlKeyPush: Boolean = false;
 private var isAddedDefSearchItems: Boolean = false;
 
 private var _exitProcessCompleted: Boolean = false;
-
-private var isAlwaysEconomy: Boolean = false;
 
 private var isDisEnableAutoExit: Boolean = false;
 
@@ -394,9 +388,9 @@ public function initNNDD(nndd: NNDD): void {
 
     this.version = VersionUtil.instance.versionNumber;
 
-    this.title = "NNDD-5ch - v" + VersionUtil.instance.versionLabel;
+    this.title = "NNDD-RE " + VersionUtil.instance.versionLabel;
 
-    var userAgent: String = URLRequestDefaults.userAgent + " NNDD-5ch/" + this.version;
+    var userAgent: String = URLRequestDefaults.userAgent + " NNDD-RE/" + this.version;
 
     // 外部ライブラリを呼び出した後でuserAgentを設定しないとUserAgentが正しく設定されない?
     UserAgentManager.instance.userAgent = userAgent;
@@ -515,7 +509,6 @@ public function initNNDD(nndd: NNDD): void {
                                                myListItemProvider,
                                                logManager
     );
-    this.downloadManager.isAlwaysEconomy = this.isAlwaysEconomy;
     this.downloadManager.isAppendComment = this.isAppendComment;
     this.downloadManager.isUseDownloadDir = this.isUseDownloadDir;
 
@@ -2051,15 +2044,6 @@ private function readStore(isLogout: Boolean = false): void {
             this.isAutoDownload = ConfUtil.parseBoolean(confValue);
         }
 
-        errorName = "isEnableEcoCheck";
-        confValue = ConfigManager.getInstance().getItem("isEnableEcoCheck");
-        if (confValue == null) {
-            //何もしない
-        } else {
-            this.isEnableEcoCheck = ConfUtil.parseBoolean(confValue);
-        }
-
-
         errorName = "rankingPeriod";
         confValue = ConfigManager.getInstance().getItem("rankingPeriod");
         if (confValue == null) {
@@ -2097,15 +2081,6 @@ private function readStore(isLogout: Boolean = false): void {
 //		if(storedValue != null){
 //			this.isShowOnlyNowLibraryTag = storedValue.readBoolean();
 //		}
-
-        errorName = "isAlwaysEconomy";
-        confValue = ConfigManager.getInstance().getItem("isAlwaysEconomy");
-        if (confValue == null) {
-            //何もしない
-        } else {
-            this.isAlwaysEconomy = ConfUtil.parseBoolean(confValue);
-        }
-
 
         errorName = "lastCanvasTagTileListHight";
         confValue = ConfigManager.getInstance().getItem("lastCanvasTagTileListHight");
@@ -2378,14 +2353,6 @@ private function readStore(isLogout: Boolean = false): void {
             this.isCloseNNDDWindowWhenLogin = false;
         }
 
-        errorName = "isSkipEconomy";
-        confValue = ConfigManager.getInstance().getItem("isSkipEconomy");
-        if (confValue != null) {
-            this.isSkipEconomy = ConfUtil.parseBoolean(confValue);
-        } else {
-            this.isSkipEconomy = false;
-        }
-
         errorName = "isSaveMyListHistory";
         confValue = ConfigManager.getInstance().getItem("isSaveMyListHistory");
         if (confValue != null) {
@@ -2525,8 +2492,6 @@ private function onFirstTimeLoginSuccess(event: HTTPStatusEvent): void {
     }
 
     downloadManager.setMailAndPass(UserManager.instance.user, UserManager.instance.password);
-    downloadManager.isContactTheUser = isEnableEcoCheck;
-    downloadManager.isSkipEconomy = isSkipEconomy;
     downloadManager.retryMaxCount = this.downloadRetryMaxCount;
     downloadManager.maxDlListCount = this.dlListMaxCount;
     scheduleManager = new ScheduleManager(logManager, downloadManager);
@@ -3173,16 +3138,13 @@ private function nicoConfigCanvasCreationComplete(event: FlexEvent): void {
 
 private function libraryConfigCanvasCreationComplete(event: FlexEvent): void {
     checkbox_autoDL.selected = this.isAutoDownload;
-    checkBox_isAlwaysEconomyMode.selected = this.isAlwaysEconomy;
     checkBox_enableLibrary.selected = this.isEnableLibrary;
-    checkbox_ecoDL.selected = this.isEnableEcoCheck;
     checkBox_isAppendComment.selected = this.isAppendComment;
     numericStepper_saveCommentMaxCount.value = this.saveCommentMaxCount;
     numericStepper_saveCommentMaxCount.enabled = this.isAppendComment;
     numStepper_downloadRetryMaxCount.value = this.downloadRetryMaxCount;
     numStepper_dlListMaxCount.value = this.dlListMaxCount;
     checkBox_useNewCommentGet.selected = !this.useOldTypeCommentGet;
-    checkbox_ecoDLSkip.selected = this.isSkipEconomy;
 }
 
 private function libraryWidthChanged(event: ResizeEvent): void {
@@ -3763,10 +3725,16 @@ private function rankingRenewButtonClicked(): void {
                     dataGrid_ranking.enabled = true;
 
                     var rankingListBuilder: RankingListBuilder = new RankingListBuilder();
-                    rankingProvider = rankingListBuilder.getRankingArrayCollection(
-                        new XML((event.currentTarget as RankingLoader).data),
-                        rankingPageIndex
-                    );
+                    if (period !== NicoRankingUrl.NEW_ARRIVAL) {
+                        rankingProvider = rankingListBuilder.getRankingArrayCollectionFromJson(
+                            (event.currentTarget as RankingLoader).data
+                        );
+                    } else {
+                        rankingProvider = rankingListBuilder.getRankingArrayCollection(
+                            new XML((event.currentTarget as RankingLoader).data),
+                            rankingPageIndex
+                        );
+                    }
 
                     if (period !== NicoRankingUrl.NEW_ARRIVAL && categoryListProvider.length == 0) {
                         categoryList = RankingListBuilder.getCategoryList();
@@ -4632,10 +4600,6 @@ private function saveStore(): void {
         ConfigManager.getInstance().removeItem("isAutoDownload");
         ConfigManager.getInstance().setItem("isAutoDownload", isAutoDownload);
 
-        //エコノミー時の確認有無
-        ConfigManager.getInstance().removeItem("isEnableEcoCheck");
-        ConfigManager.getInstance().setItem("isEnableEcoCheck", isEnableEcoCheck);
-
         //選択されているランキング期間
         ConfigManager.getInstance().removeItem("rankingTarget");
 
@@ -4695,10 +4659,6 @@ private function saveStore(): void {
 //		bytes = new ByteArray();
 //		bytes.writeBoolean(isShowOnlyNowLibraryTag);
 //		EncryptedLocalStore.setItem("isShowOnlyNowLibraryTag", bytes);
-
-        /*常にエコノミーモードでダウンロードするかどうか*/
-        ConfigManager.getInstance().removeItem("isAlwaysEconomy");
-        ConfigManager.getInstance().setItem("isAlwaysEconomy", isAlwaysEconomy);
 
         /* ランキングダブルクリックで動画を再生するかどうか */
         ConfigManager.getInstance().removeItem("isDoubleClickOnVideoPlay");
@@ -4865,9 +4825,6 @@ private function saveStore(): void {
 
         ConfigManager.getInstance().removeItem("isCloseNNDDWindowWhenLogin");
         ConfigManager.getInstance().setItem("isCloseNNDDWindowWhenLogin", this.isCloseNNDDWindowWhenLogin);
-
-        ConfigManager.getInstance().removeItem("isSkipEconomy");
-        ConfigManager.getInstance().setItem("isSkipEconomy", this.isSkipEconomy);
 
         ConfigManager.getInstance().removeItem("isSaveMyListHistory");
         ConfigManager.getInstance().setItem("isSaveMyListHistory", this.isSaveMyListHistory);
@@ -6179,16 +6136,6 @@ private function donation(): void {
 
 private function checkBoxAutoDLChanged(event: Event): void {
     isAutoDownload = (event.currentTarget as CheckBox).selected;
-}
-
-private function checkBoxEcoCheckChanged(event: Event): void {
-    isEnableEcoCheck = (event.currentTarget as CheckBox).selected;
-    this.downloadManager.isContactTheUser = isEnableEcoCheck;
-}
-
-private function checkBoxEcoSkipChanged(event: Event): void {
-    isSkipEconomy = (event.currentTarget as CheckBox).selected;
-    this.downloadManager.isSkipEconomy = isSkipEconomy;
 }
 
 private function downloadListDoubleClicked(event: ListEvent): void {
@@ -7667,11 +7614,6 @@ private function checkBoxEnableLibraryChanged(event: MouseEvent): void {
     isEnableLibrary = checkBox_enableLibrary.selected;
 //	checkbox_showOnlyNowLibraryTag.enabled = isEnableLibrary;
 
-}
-
-private function checkBoxAlwaysEcoChanged(event: MouseEvent): void {
-    isAlwaysEconomy = checkBox_isAlwaysEconomyMode.selected;
-    downloadManager.isAlwaysEconomy = isAlwaysEconomy;
 }
 
 private function checkBoxUseNewCommentGet(event: MouseEvent): void {

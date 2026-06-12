@@ -68,15 +68,9 @@ package org.mineap.nndd.download {
 
         private var downloadItemMap: Object = new Object();
 
-        public var isContactTheUser: Boolean = false;
-
-        public var isAlwaysEconomy: Boolean = false;
-
         public var isAppendComment: Boolean = false;
 
         public var isUseDownloadDir: Boolean = false;
-
-        public var isSkipEconomy: Boolean = false;
 
         private var lastStatusUpdateTime: Date = new Date();
 
@@ -488,10 +482,6 @@ package org.mineap.nndd.download {
                 );
 
                 //完了系ハンドラ登録
-                this._nnddDownloader.addEventListener(
-                    NNDDDownloader.DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP,
-                    downlaodFailListener
-                );
                 this._nnddDownloader.addEventListener(NNDDDownloader.DOWNLOAD_PROCESS_CANCELD, downlaodFailListener);
                 this._nnddDownloader.addEventListener(NNDDDownloader.DOWNLOAD_PROCESS_ERROR, downlaodFailListener);
                 this._nnddDownloader.addEventListener(
@@ -732,12 +722,9 @@ package org.mineap.nndd.download {
                                            null,
                                            myLibrary,
                                            false,
-                                           this.isContactTheUser,
-                                           this.isAlwaysEconomy,
                                            this.isAppendComment,
                                            FlexGlobals.topLevelApplication.getSaveCommentMaxCount(),
-                                           FlexGlobals.topLevelApplication.getUseOldTypeCommentGet(),
-                                           this.isSkipEconomy
+                                           FlexGlobals.topLevelApplication.getUseOldTypeCommentGet()
             );
 
             return nnddDownloader;
@@ -1079,24 +1066,6 @@ package org.mineap.nndd.download {
                     // 自動リトライ
                     next(false);
                 }
-            } else if (event.type == NNDDDownloader.DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP) {
-                status = "スキップ(エコノミーモード)";
-                logManager.addLog("スキップ(エコノミーモード):" + (event.target as NNDDDownloader).saveVideoName);
-                logManager.addLog("***動画取得スキップ(エコノミーモード)***");
-                if (isDownloading) {
-                    isRetry = false;
-                    retryCount = 0;
-                    if (timer != null) {
-                        timer.stop();
-                    }
-                    isDownloading = false;
-                    showCountRest();
-                    var index: int = searchQueueIndexByQueueId(queueId);
-                    setStatus("スキップ\n" + status, DownloadStatusType.ECONOMY_SKIP, queueVideoName, index);
-
-                    // 自動リトライ
-                    next(false);
-                }
             }
             this._nnddDownloader = null;
 
@@ -1252,10 +1221,6 @@ package org.mineap.nndd.download {
             );
             this._nnddDownloader.removeEventListener(NNDDDownloader.DOWNLOAD_PROCESS_CANCELD, downlaodFailListener);
             this._nnddDownloader.removeEventListener(NNDDDownloader.DOWNLOAD_PROCESS_ERROR, downlaodFailListener);
-            this._nnddDownloader.removeEventListener(
-                NNDDDownloader.DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP,
-                downlaodFailListener
-            );
 
         }
 
