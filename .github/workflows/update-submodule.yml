@@ -1,0 +1,23 @@
+name: Update submodule pointer
+
+on:
+  repository_dispatch:
+    types: [submodule-update]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Update submodule pointer and commit
+        run: |
+          git config user.name "NNDD-Rebuild"
+          git config user.email "nndd-re@nks-s.jp"
+          SUBMODULE=${{ github.event.client_payload.submodule }}
+          SHA=${{ github.event.client_payload.sha }}
+          git update-index --cacheinfo 160000,${SHA},${SUBMODULE}
+          git commit -m "サブモジュール自動更新 (${SUBMODULE} ${SHA:0:7})"
+          git push
