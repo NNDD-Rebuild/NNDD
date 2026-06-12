@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          lfs: true
+
       - uses: actions/setup-node@v4
         with:
           node-version: 18
@@ -57,11 +59,17 @@ jobs:
 
       - name: build
         env:
-          certificate_password: ${{ secrets.NNDD_RE_CERTIFICATE_PASSWORD }}
+          certificate_password: ${{ secrets.NNDD_5CH_CERTIFICATE_PASSWORD }}
         run: |
           cd src
-          $AIR_HOME/bin/amxmlc NNDD.mxml -compiler.include-libraries ../libs/* -warnings=false
-          java -jar $AIR_HOME/lib/adt.jar -package -storetype pkcs12 -keystore ../nndd-RE_certificate.pfx -storepass $certificate_password NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json
+          $AIR_HOME/bin/amxmlc NNDD.mxml \
+            -source-path ../nicovideo4as/src \
+            -include-libraries ../libs/flashlsOSMF.swc ../libs/airhttpd-0.5-mineap-0.1.swc ../libs/NativeApplicationUpdater-0.5.1.swc ../libs/FreSharp.swc ../libs/FreSwift.swc ../libs/WebViewANE.swc \
+            -warnings=false
+          java -jar $AIR_HOME/lib/adt.jar -package -tsa none \
+            -storetype pkcs12 -keystore ../nndd-5ch_certificate.pfx -storepass "$certificate_password" \
+            NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json \
+            -extdir ../libs
 
       - uses: actions/upload-artifact@v4
         with:
@@ -103,7 +111,7 @@ jobs:
 
       - name: build
         run: |
-          air/bin/adt.bat -package -target native NNDD_${{ needs.build-air.outputs.slug }}.exe NNDD.air
+          air/bin/adt.bat -package -tsa none -target native NNDD_${{ needs.build-air.outputs.slug }}.exe NNDD.air
 
       - uses: softprops/action-gh-release@v2
         with:
