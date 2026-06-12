@@ -43,7 +43,6 @@ package org.mineap.nndd.versionCheck {
             var appXML: XML = NativeApplication.nativeApplication.applicationDescriptor;
             var air: Namespace = appXML.namespaceDeclarations()[0];
             var version: String = appXML.air::versionLabel;
-            version = version.substring(1);
             return version;
         }
 

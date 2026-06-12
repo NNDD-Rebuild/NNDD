@@ -12,8 +12,10 @@ pathcheck:
 	fi
 
 NNDD.air: pathcheck NNDD.swf
-	@java -jar $$AIR_HOME/lib/adt.jar -certificate -cn SelfSigned 2048-RSA certificate_no_password.pfx ''
-	@java -jar $$AIR_HOME/lib/adt.jar -package -storetype pkcs12 -keystore certificate_no_password.pfx -storepass '' NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json
+	@if [ ! -f certificate_no_password.pfx ]; then \
+		java -jar $$AIR_HOME/lib/adt.jar -certificate -cn SelfSigned 2048-RSA certificate_no_password.pfx ''; \
+	fi
+	@java -jar $$AIR_HOME/lib/adt.jar -package -tsa none -storetype pkcs12 -keystore certificate_no_password.pfx -storepass '' NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json hlsplayer.html hls.min.js
 
 NNDD.swf: pathcheck
 	@$$AIR_HOME/bin/amxmlc NNDD.mxml -compiler.include-libraries ../libs/* -warnings=false

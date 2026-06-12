@@ -1,4 +1,4 @@
-NNDD-5ch/NNDD+DMC/NNDD Update History
+NNDD-RE/NNDD-5ch/NNDD+DMC/NNDD Update History
 ============================
 
 Author
@@ -10,8 +10,12 @@ Author
 
 ### nndd-reboot - 5chメンテナンス版 (4.1.0-)
 
+### nndd-RE - 帰ってきたニコニコ対応版 (RE-5.0.0-)
+
 History
 -------
+### 2026-06-13 RE-v5.0.0 (α-release)
+* 帰ってきたニコニコに対応
 
 ### 2024-04-02 v4.4.9 (Pre-release)
 * コメント投稿機能を削除

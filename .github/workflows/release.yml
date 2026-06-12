@@ -57,11 +57,11 @@ jobs:
 
       - name: build
         env:
-          certificate_password: ${{ secrets.NNDD_5CH_CERTIFICATE_PASSWORD }}
+          certificate_password: ${{ secrets.NNDD_RE_CERTIFICATE_PASSWORD }}
         run: |
           cd src
           $AIR_HOME/bin/amxmlc NNDD.mxml -compiler.include-libraries ../libs/* -warnings=false
-          java -jar $AIR_HOME/lib/adt.jar -package -storetype pkcs12 -keystore ../nndd-5ch_certificate.pfx -storepass $certificate_password NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json
+          java -jar $AIR_HOME/lib/adt.jar -package -storetype pkcs12 -keystore ../nndd-RE_certificate.pfx -storepass $certificate_password NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json
 
       - uses: actions/upload-artifact@v4
         with:

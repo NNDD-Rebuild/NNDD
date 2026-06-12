@@ -58,6 +58,7 @@ bin-release/
 *.air
 *.ipa
 *.apk
+*.exe
 
 # Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
 # should NOT be excluded as they contain compiler settings and other important
@@ -112,3 +113,21 @@ Temporary Items
 
 .idea/
 *.p12
+
+# Certificates
+*.pfx
+
+# Temp files
+*.tmp
+*.tmp/
+
+# Personal scripts / local config (contain local paths)
+ログ.bat
+CLAUDE.md
+
+# Large binaries — SDK / ANE / SWC (place manually)
+containers/builder/*.zip
+containers/builder/*.tar.gz
+containers/builder/*.swc
+libs/*.ane
+libs/*.swc

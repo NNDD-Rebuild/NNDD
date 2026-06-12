@@ -121,10 +121,10 @@ package org.mineap.nndd {
 
         /*主にログ出力*/
         public static var BOOT_TIME_LOG: String =
-            "アプリケーションの起動 - NNDD-5ch\n" +
-            "\t*****\tNNDD-5chはMineAppProject作成のNNDDをフォークして作成されたNNDD+DMCをフォークして作成しています。\t*****\n" +
-            "\tNNDD-5ch\t\t\t\t https://github.com/nndd-reboot/NNDD\n" +
-            "\t問題の報告などはこちらへ\t https://github.com/nndd-reboot/NNDD/issues\n" +
+            "アプリケーションの起動 - NNDD-RE\n" +
+            "\t*****\tNNDD-5chはMineAppProject作成のNNDDをフォークして作成されたNNDD+DMCをフォークして作成されたNNDD-5chをフォークして作成しています。\t*****\n" +
+            "\tNNDD-RE\t\t\t\t https://github.com/NNDD-Rebuild/NNDD\n" +
+            "\t問題の報告などはこちらへ\t https://github.com/NNDD-Rebuild/NNDD/issues\n" +
             "\t*******************************************************************";
 
         public static var DELETE_FILE: String = "ファイルを削除";

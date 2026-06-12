@@ -244,8 +244,11 @@
 
     <exe>
         <version>4.4.7</version>
-        <url>https://github.com/nndd-reboot/NNDD/releases/download/v4.4.7/NNDD_v4_4_7.exe</url>
+        <url>https://github.com/NNDD-Rebuild/NNDD/releases/download/RE-v5.0.0/NNDD_RE-v5_0_0.exe</url>
         <description><![CDATA[
+2026-06-13 RE-v5.0.0 (α-release)
+・帰ってきたニコニコに対応
+
 2023-07-16 v4.4.7
 ・コメントの取得結果を強制的に成功として処理するように修正
 
