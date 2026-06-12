@@ -1,8 +1,16 @@
 package org.mineap.nndd.player {
+    import com.tuarua.WebView;
+    import com.tuarua.webview.Settings;
+
+    import flash.desktop.NativeProcess;
+    import flash.desktop.NativeProcessStartupInfo;
     import flash.display.Loader;
     import flash.display.LoaderInfo;
     import flash.display.MovieClip;
+    import flash.display.NativeWindow;
     import flash.display.NativeWindowType;
+    import flash.events.NativeProcessExitEvent;
+    import flash.events.ProgressEvent;
     import flash.display.StageDisplayState;
     import flash.display.StageQuality;
     import flash.events.ErrorEvent;
@@ -13,10 +21,16 @@ package org.mineap.nndd.player {
     import flash.events.MouseEvent;
     import flash.events.TimerEvent;
     import flash.filesystem.File;
+    import flash.geom.Point;
     import flash.geom.Rectangle;
     import flash.media.SoundMixer;
     import flash.media.SoundTransform;
+    import flash.media.Video;
+    import flash.net.NetConnection;
+    import flash.net.NetStream;
+    import flash.net.NetStreamAppendBytesAction;
     import flash.net.URLRequest;
+    import flash.utils.ByteArray;
     import flash.utils.Timer;
 
     import mx.collections.ArrayCollection;
@@ -163,6 +177,18 @@ package org.mineap.nndd.player {
         public var nnddServerPortNum: int = -1;
 
         private var isHLS: Boolean = false;
+        private static var _webView: WebView;
+        private var _nativePlayerProcess: NativeProcess = null;
+
+        private var _ffmpegProcess: NativeProcess = null;
+        private var _ffmpegNs: NetStream = null;
+        private var _ffmpegVideo: Video = null;
+        private var _ffmpegNc: NetConnection = null;
+        private var _ffmpegProxyUrl: String = null;
+        private var _ffmpegPlayerPath: String = null;
+        private var _ffmpegCurrentSec: Number = 0;
+        private var _ffmpegDuration: Number = 0;
+        private var _ffmpegSeekBaseSec: Number = 0;
 
         private var renewDownloadManager: RenewDownloadManager;
         private var nnddDownloaderForStreaming: NNDDDownloader;
@@ -287,6 +313,8 @@ package org.mineap.nndd.player {
         public function destructor(): void {
 
             isMovieClipStopping = false;
+            stopNativePlayer();
+            stopFfmpegStream();
 
             if (this.movieEndTimer != null) {
                 this.movieEndTimer.stop();
@@ -727,12 +755,8 @@ package org.mineap.nndd.player {
                                     _dmcHeartbeatTimer.start();
                                 }
 
-                                if (isHLS) {
-                                    // HLSの場合, 動画ソースはDynamicStreamingResouceオブジェクトにする必要がある
-                                    videoDisplay.source = new DynamicStreamingResource(videoPath);
-                                } else {
-                                    videoDisplay.source = videoPath;
-                                }
+                                // flashlsOSMF は URLResource (String) で m3u8 URL を受け取る
+                                videoDisplay.source = videoPath;
                             }
                         );
 
@@ -898,6 +922,406 @@ package org.mineap.nndd.player {
 //			}
 
             return videoRectangle;
+        }
+
+        private function _playWithWebView(dmsUrl: String, comments: Comments, videoTitle: String): void {
+            var uicomp: UIComponent = videoPlayer.vbox_videoPlayer;
+            var topLeft: Point = uicomp.localToGlobal(new Point(0, 0));
+            var rect: Rectangle = new Rectangle(topLeft.x, topLeft.y, uicomp.width, uicomp.height);
+
+            var settings: Settings = new Settings();
+            settings.cef.commandLineArgs.push({key: "disable-web-security", value: "1"});
+            settings.cef.commandLineArgs.push({key: "allow-file-access-from-files", value: "1"});
+            settings.cef.commandLineArgs.push({key: "allow-universal-access-from-files", value: "1"});
+            settings.cef.commandLineArgs.push({key: "enable-features", value: "PlatformHEVCDecoderSupport,MediaFoundationClearVideoDecoder,MediaFoundationH264Encoding,MediaFoundationAsyncVideoDecoder"});
+            settings.cef.commandLineArgs.push({key: "use-media-foundation-for-ovc", value: "all"});
+            settings.cef.commandLineArgs.push({key: "use-angle", value: "d3d11"});
+            settings.cef.remoteDebuggingPort = 9222;
+            settings.useHiDPI = true;
+
+            DmsProxy.instance.start();
+            var proxiedUrl: String = DmsProxy.instance.proxyUrl(dmsUrl);
+
+            var htmlNativePath: String = File.applicationDirectory.resolvePath("hlsplayer.html").nativePath.replace(/\\/g, "/");
+            var htmlUrl: String = "file:///" + encodeURI(htmlNativePath) + "?url=" + encodeURIComponent(proxiedUrl);
+
+            if (_webView == null) {
+                _webView = WebView.shared();
+                _webView.init(videoPlayer.stage, rect, new URLRequest(htmlUrl), settings, 1, 0xFF000000);
+            } else {
+                try {
+                    _webView.viewPort = rect;
+                    _webView.load(new URLRequest(htmlUrl));
+                } catch (e: Error) {
+                    LogManager.instance.addLog("WebView handle invalid, reinitializing: " + e);
+                    _webView = null;
+                    _webView = WebView.shared();
+                    _webView.init(videoPlayer.stage, rect, new URLRequest(htmlUrl), settings, 1, 0xFF000000);
+                }
+            }
+            _webView.visible = true;
+
+            LogManager.instance.addLog("***動画の再生(DMS WebView)***");
+
+            this.isPlayListingPlay = false;
+            this.init(
+                libraryManager.tempDir.url + "/nndd[ThumbInfo].xml",
+                WINDOW_TYPE_FLV,
+                comments,
+                libraryManager.tempDir.url + "/nndd[ThumbInfo].xml",
+                true,
+                false,
+                videoTitle,
+                false,
+                videoTitle
+            );
+        }
+
+        private function _playWithNativeProcess(proxiedUrl: String, videoTitle: String): void {
+            videoPlayer.title = videoTitle != null ? videoTitle : "";
+            videoPlayer.setControllerEnable(false);
+
+            var uicomp: UIComponent = videoPlayer.vbox_videoPlayer;
+            var topLeft: Point = uicomp.localToGlobal(new Point(0, 0));
+            var sw: int = int(uicomp.width);
+            var sh: int = int(uicomp.height);
+
+            // Stage座標 → スクリーン座標 (nativeWindow.bounds + chrome offset)
+            var win: NativeWindow = videoPlayer.nativeWindow;
+            var sideChrome: int = int((win.bounds.width - win.stage.stageWidth) / 2);
+            var topChrome: int = Math.max(0, int(win.bounds.height - win.stage.stageHeight - sideChrome));
+            var px: int = int(win.bounds.x + sideChrome + topLeft.x);
+            var py: int = int(win.bounds.y + topChrome + topLeft.y);
+
+            var whereInfo: NativeProcessStartupInfo = new NativeProcessStartupInfo();
+            whereInfo.executable = new File("C:\\Windows\\System32\\where.exe");
+            whereInfo.arguments = new <String>["ffplay", "mpv"];
+
+            var whereProc: NativeProcess = new NativeProcess();
+            var self: PlayerController = this;
+            var capturedUrl: String = proxiedUrl;
+            var capturedSw: int = sw, capturedSh: int = sh;
+            var capturedPx: int = px, capturedPy: int = py;
+            var whereOutput: String = "";
+
+            whereProc.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, function(e: ProgressEvent): void {
+                try {
+                    whereOutput += whereProc.standardOutput.readUTFBytes(whereProc.standardOutput.bytesAvailable);
+                } catch (err: Error) {}
+            });
+            whereProc.addEventListener(NativeProcessExitEvent.EXIT, function(e: NativeProcessExitEvent): void {
+                var lines: Array = whereOutput.split(/\r?\n/);
+                var playerPath: String = null;
+                for each (var line: String in lines) {
+                    var t: String = line.replace(/^\s+|\s+$/g, "");
+                    if (t.length > 0) { playerPath = t; break; }
+                }
+                if (playerPath == null) {
+                    LogManager.instance.addLog("DMS NativeProcess: ffplay/mpv が PATH に見つかりません");
+                    Alert.show("ffplay.exe または mpv.exe が PATH に見つかりません。\nインストールして PATH を設定してください。", "DMS 再生エラー");
+                    return;
+                }
+                self._launchNativePlayer(playerPath, capturedUrl, capturedSw, capturedSh, capturedPx, capturedPy);
+            });
+            whereProc.start(whereInfo);
+        }
+
+        private function _launchNativePlayer(playerPath: String, url: String, sw: int, sh: int, px: int, py: int): void {
+            stopNativePlayer();
+            var isMpv: Boolean = playerPath.toLowerCase().indexOf("mpv") >= 0;
+            var info: NativeProcessStartupInfo = new NativeProcessStartupInfo();
+
+            if (isMpv) {
+                info.executable = new File(playerPath);
+                info.arguments = new <String>[
+                    "--geometry=" + sw + "x" + sh + "+" + px + "+" + py,
+                    "--no-border",
+                    "--title=NNDD_Player",
+                    "--volume=70",
+                    url
+                ];
+            } else {
+                // ffplay: PowerShell 経由で SDL_VIDEO_WINDOW_POS を設定 (cmd.exe は % を誤解釈するため)
+                info.executable = new File("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+                var esc: Function = function(s: String): String { return s.replace(/'/g, "''"); };
+                var psCmd: String =
+                    "$env:SDL_VIDEO_WINDOW_POS='" + px + "," + py + "'; " +
+                    "& '" + esc(playerPath) + "' " +
+                    "-loglevel error -autoexit " +
+                    "-x " + sw + " -y " + sh + " -noborder -volume 70 " +
+                    "'" + esc(url) + "'";
+                info.arguments = new <String>["-NonInteractive", "-Command", psCmd];
+            }
+
+            _nativePlayerProcess = new NativeProcess();
+            var stderrBuf: String = "";
+            _nativePlayerProcess.addEventListener(ProgressEvent.STANDARD_ERROR_DATA, function(ev: ProgressEvent): void {
+                try {
+                    stderrBuf += _nativePlayerProcess.standardError.readUTFBytes(_nativePlayerProcess.standardError.bytesAvailable);
+                } catch (er: Error) {}
+            });
+            _nativePlayerProcess.addEventListener(NativeProcessExitEvent.EXIT, function(e: NativeProcessExitEvent): void {
+                if (stderrBuf.length > 0) {
+                    LogManager.instance.addLog("DMS NativeProcess stderr:\n" + stderrBuf.substring(0, 1000));
+                }
+                LogManager.instance.addLog("DMS NativeProcess: 終了 exitCode=" + e.exitCode);
+                _nativePlayerProcess = null;
+            });
+            _nativePlayerProcess.start(info);
+            LogManager.instance.addLog("DMS NativeProcess: 起動 " + (isMpv ? "mpv" : "ffplay") + " url=" + url.substring(0, 60));
+        }
+
+        public function stopNativePlayer(): void {
+            if (_nativePlayerProcess != null) {
+                try { _nativePlayerProcess.exit(true); } catch (e: Error) {}
+                _nativePlayerProcess = null;
+            }
+        }
+
+        private function _playWithFfmpegStream(proxyUrl: String, videoTitle: String, comments: Comments): void {
+            LogManager.instance.addLog("DMS ffmpeg: _playWithFfmpegStream 開始");
+            stopFfmpegStream();
+
+            if (videoPlayer != null) {
+                videoPlayer.label_downloadStatus.text = "";
+            }
+
+            this.isPlayListingPlay = false;
+            this.init(
+                libraryManager.tempDir.url + "/nndd[ThumbInfo].xml",
+                WINDOW_TYPE_FLV,
+                comments,
+                libraryManager.tempDir.url + "/nndd[ThumbInfo].xml",
+                false,
+                true,
+                videoTitle,
+                false,
+                videoTitle
+            );
+
+            LogManager.instance.addLog("DMS ffmpeg: init() 完了、where.exe を起動");
+
+            var whereInfo: NativeProcessStartupInfo = new NativeProcessStartupInfo();
+            whereInfo.executable = new File("C:\\Windows\\System32\\where.exe");
+            whereInfo.arguments = new <String>["ffmpeg"];
+
+            var whereProc: NativeProcess = new NativeProcess();
+            var self: PlayerController = this;
+            var capturedUrl: String = proxyUrl;
+            var whereOutput: String = "";
+
+            whereProc.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, function(e: ProgressEvent): void {
+                try {
+                    whereOutput += whereProc.standardOutput.readUTFBytes(whereProc.standardOutput.bytesAvailable);
+                } catch (err: Error) {}
+            });
+            whereProc.addEventListener(NativeProcessExitEvent.EXIT, function(e: NativeProcessExitEvent): void {
+                LogManager.instance.addLog("DMS ffmpeg: where.exe 終了 output=" + whereOutput.substring(0, 100));
+                var lines: Array = whereOutput.split(/\r?\n/);
+                var playerPath: String = null;
+                for each (var line: String in lines) {
+                    var t: String = line.replace(/^\s+|\s+$/g, "");
+                    if (t.length > 0) { playerPath = t; break; }
+                }
+                if (playerPath == null) {
+                    LogManager.instance.addLog("DMS ffmpeg: ffmpeg が PATH に見つかりません");
+                    Alert.show("ffmpeg.exe が PATH に見つかりません。\nインストールして PATH を設定してください。", "DMS 再生エラー");
+                    return;
+                }
+                self._ffmpegPlayerPath = playerPath;
+                self._ffmpegProxyUrl = capturedUrl;
+                self._startFfmpegProcess(playerPath, capturedUrl, 0);
+            });
+            whereProc.start(whereInfo);
+            LogManager.instance.addLog("DMS ffmpeg: where.exe 起動済み");
+        }
+
+        private function _startFfmpegProcess(ffmpegPath: String, proxyUrl: String, startSec: Number): void {
+            var isFirstStart: Boolean = (_ffmpegNc == null);
+            try {
+            if (_ffmpegNc == null) {
+                // Stop OSMF VideoDisplay to prevent it from firing time/seek events
+                var osmfRawIdx: int = 1;
+                if (videoDisplay != null) {
+                    try {
+                        removeVideoDisplayEventListeners(videoDisplay);
+                        videoDisplay.stop();
+                        videoDisplay.source = null;
+                    } catch (e: Error) {}
+                    try {
+                        osmfRawIdx = videoPlayer.canvas_video.rawChildren.getChildIndex(videoDisplay);
+                        videoPlayer.canvas_video.removeChild(videoDisplay);
+                    } catch (e: Error) {}
+                }
+
+                _ffmpegNc = new NetConnection();
+                _ffmpegNc.connect(null);
+                _ffmpegNs = new NetStream(_ffmpegNc);
+                var self: PlayerController = this;
+                _ffmpegNs.client = {
+                    onMetaData: function(info: Object): void { self._onFfmpegMetaData(info); },
+                    onCuePoint: function(o: Object): void {}
+                };
+                _ffmpegNs.play(null);
+                _ffmpegNs.appendBytesAction(NetStreamAppendBytesAction.RESET_BEGIN);
+
+                _ffmpegVideo = new Video(
+                    videoPlayer.canvas_video.width,
+                    videoPlayer.canvas_video.height
+                );
+                _ffmpegVideo.attachNetStream(_ffmpegNs);
+                // Insert at the position where OSMF was, so comment sprites remain on top
+                videoPlayer.canvas_video.rawChildren.addChildAt(_ffmpegVideo, osmfRawIdx);
+                videoPlayer.setControllerEnable(true);
+
+                if (commentTimer != null && !commentTimer.running) {
+                    this.time = (new Date()).time;
+                    commentTimer.start();
+                }
+            }
+            } catch (initErr: Error) {
+                LogManager.instance.addLog("DMS ffmpeg: _startFfmpegProcess init エラー: " + initErr.message + "\n" + initErr.getStackTrace());
+            }
+
+            // 古いffmpegプロセスを先に停止 (停止後のstdoutが新ストリームに混入するのを防ぐ)
+            if (_ffmpegProcess != null && _ffmpegProcess.running) {
+                _ffmpegProcess.removeEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, _onFfmpegStdout);
+                _ffmpegProcess.removeEventListener(ProgressEvent.STANDARD_ERROR_DATA, _onFfmpegStderr);
+                _ffmpegProcess.removeEventListener(NativeProcessExitEvent.EXIT, _onFfmpegExit);
+                try { _ffmpegProcess.exit(true); } catch (killErr: Error) {}
+                _ffmpegProcess = null;
+            }
+
+            // シーク (2回目以降) は古いNetStreamを破棄してバッファを完全クリアする。
+            // appendBytesAction(RESET_BEGIN)だけでは溜まった旧データが再生され続け、
+            // シーク位置に飛ばずに元の位置に戻ってしまうため、NetStream自体を作り直す。
+            if (!isFirstStart && _ffmpegNc != null) {
+                var selfSeek: PlayerController = this;
+                try { _ffmpegNs.close(); } catch (closeErr: Error) {}
+                _ffmpegNs = new NetStream(_ffmpegNc);
+                _ffmpegNs.client = {
+                    onMetaData: function(info: Object): void { selfSeek._onFfmpegMetaData(info); },
+                    onCuePoint: function(o: Object): void {}
+                };
+                _ffmpegNs.play(null);
+                _ffmpegNs.appendBytesAction(NetStreamAppendBytesAction.RESET_BEGIN);
+                if (_ffmpegVideo != null) {
+                    _ffmpegVideo.attachNetStream(_ffmpegNs);
+                }
+            }
+
+            var info: NativeProcessStartupInfo = new NativeProcessStartupInfo();
+            info.executable = new File(ffmpegPath);
+            info.arguments = new <String>[
+                "-loglevel", "error",
+                "-progress", "pipe:2",
+                "-ss", String(startSec),
+                "-i", proxyUrl,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-f", "flv",
+                "pipe:1"
+            ];
+
+            _ffmpegProcess = new NativeProcess();
+            _ffmpegProcess.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, _onFfmpegStdout);
+            _ffmpegProcess.addEventListener(ProgressEvent.STANDARD_ERROR_DATA, _onFfmpegStderr);
+            _ffmpegProcess.addEventListener(NativeProcessExitEvent.EXIT, _onFfmpegExit);
+            _ffmpegProcess.start(info);
+            _ffmpegCurrentSec = startSec;
+            _ffmpegSeekBaseSec = startSec;
+            LogManager.instance.addLog("DMS ffmpeg: 起動 url=" + proxyUrl.substring(0, 60) + " ss=" + startSec);
+        }
+
+        private function _onFfmpegStdout(e: ProgressEvent): void {
+            var bytes: ByteArray = new ByteArray();
+            _ffmpegProcess.standardOutput.readBytes(bytes);
+            _ffmpegNs.appendBytes(bytes);
+        }
+
+        private function _onFfmpegStderr(e: ProgressEvent): void {
+            var txt: String = "";
+            try {
+                txt = _ffmpegProcess.standardError.readUTFBytes(_ffmpegProcess.standardError.bytesAvailable);
+            } catch (err: Error) {}
+            var m: Array = txt.match(/out_time_ms=(\d+)/);
+            if (m) {
+                // out_time_msは「処理位置」であり実再生位置ではない (-c copy で最高速処理されるため)。
+                // ss=0初回起動時の処理位置の最大値 = 動画全長 としてdurationを記録する。
+                var procSec: Number = Number(m[1]) / 1000000;
+                _ffmpegCurrentSec = procSec;
+                if (_ffmpegSeekBaseSec == 0 && procSec > _ffmpegDuration) {
+                    _ffmpegDuration = procSec;
+                }
+            }
+        }
+
+        private function _onFfmpegMetaData(info: Object): void {
+            if (info.duration) {
+                _ffmpegDuration = Number(info.duration);
+                videoPlayer.videoController.slider_timeline.maximum = _ffmpegDuration;
+                videoPlayer.videoController_under.slider_timeline.maximum = _ffmpegDuration;
+            }
+        }
+
+        private function _onFfmpegExit(e: NativeProcessExitEvent): void {
+            LogManager.instance.addLog("DMS ffmpeg: 終了 exitCode=" + e.exitCode);
+            _ffmpegProcess = null;
+        }
+
+        private function _updateFfmpegSlider(): void {
+            commentTimerVpos = int(_ffmpegCurrentSec * 1000);
+            if (sliderChanging) return;
+            var nowSec: String = String(int(_ffmpegCurrentSec % 60));
+            var nowMin: String = String(int(_ffmpegCurrentSec / 60));
+            var allSec: String = String(int(_ffmpegDuration % 60));
+            var allMin: String = String(int(_ffmpegDuration / 60));
+            if (nowSec.length == 1) nowSec = "0" + nowSec;
+            if (nowMin.length == 1) nowMin = "0" + nowMin;
+            if (allSec.length == 1) allSec = "0" + allSec;
+            if (allMin.length == 1) allMin = "0" + allMin;
+            videoPlayer.videoController.slider_timeline.value = _ffmpegCurrentSec;
+            videoPlayer.videoController_under.slider_timeline.value = _ffmpegCurrentSec;
+            videoPlayer.videoController.label_time.text = nowMin + ":" + nowSec + "/" + allMin + ":" + allSec;
+            videoPlayer.videoController_under.label_time.text = nowMin + ":" + nowSec + "/" + allMin + ":" + allSec;
+        }
+
+        public function isFfmpegPlaying(): Boolean {
+            return _ffmpegNs != null;
+        }
+
+        public function seekFfmpegStream(targetSec: Number): void {
+            // appendBytesモードのNetStreamはライブ供給専用でバッファ内ランダムseek非対応のため、
+            // ffmpegを-ss付きで再起動してシーク位置から再ストリーミングする
+            if (_ffmpegPlayerPath == null || _ffmpegProxyUrl == null) return;
+            _startFfmpegProcess(_ffmpegPlayerPath, _ffmpegProxyUrl, targetSec);
+        }
+
+        public function stopFfmpegStream(): void {
+            if (_ffmpegProcess != null) {
+                try { _ffmpegProcess.exit(true); } catch (e: Error) {}
+                _ffmpegProcess = null;
+            }
+            if (_ffmpegNs != null) {
+                try { _ffmpegNs.close(); } catch (e: Error) {}
+                _ffmpegNs = null;
+            }
+            if (_ffmpegNc != null) {
+                try { _ffmpegNc.close(); } catch (e: Error) {}
+                _ffmpegNc = null;
+            }
+            if (_ffmpegVideo != null) {
+                try {
+                    if (_ffmpegVideo.parent != null) {
+                        videoPlayer.canvas_video.rawChildren.removeChild(_ffmpegVideo);
+                    }
+                } catch (e: Error) {}
+                _ffmpegVideo = null;
+            }
+            _ffmpegPlayerPath = null;
+            _ffmpegProxyUrl = null;
+            _ffmpegCurrentSec = 0;
+            _ffmpegDuration = 0;
         }
 
         /**
@@ -2168,6 +2592,14 @@ package org.mineap.nndd.player {
          *
          */
         private function streamingProgressHandler(event: TimerEvent): void {
+            // ffmpeg再生時はストリーミング進捗が無意味なので非表示
+            if (_ffmpegNs != null) {
+                if (streamingProgressTimer !== null) {
+                    streamingProgressTimer.stop();
+                }
+                this.videoPlayer.label_playSourceStatus.text = "";
+                return;
+            }
             // ストリーミング再生でない
             if (!this.isStreamingPlay) {
                 if (streamingProgressTimer !== null) {
@@ -2253,6 +2685,7 @@ package org.mineap.nndd.player {
          *
          */
         private function currentTimeChangeEventHandler(event: TimeEvent = null): void {
+            if (_ffmpegNs != null) return;
             try {
                 var allSec: String = "00", allMin: String = "0";
                 var nowSec: String = "00", nowMin: String = "0";
@@ -2667,6 +3100,32 @@ package org.mineap.nndd.player {
                 this.commentTimerVpos += (tempTime - this.time);
             }
 
+            //ffmpeg再生時はNetStreamの実再生位置でvpos・スライダ・時刻表示を更新
+            if (_ffmpegNs != null) {
+                var ffPos: Number = _ffmpegSeekBaseSec + _ffmpegNs.time;
+                commentTimerVpos = int(ffPos * 1000);
+                // スライダ押下中 (トラッククリック/ドラッグ) はプログラム代入による
+                // 誤CHANGE→誤seekを防ぐため、スライダ位置を更新しない
+                var sliderPressing: Boolean = false;
+                try { sliderPressing = videoPlayer.videoController.isSliderPressing(); } catch (spErr: Error) {}
+                if (!sliderChanging && !sliderPressing) {
+                    var fNowSec: String = String(int(ffPos % 60));
+                    var fNowMin: String = String(int(ffPos / 60));
+                    var fAllSec: String = String(int(_ffmpegDuration % 60));
+                    var fAllMin: String = String(int(_ffmpegDuration / 60));
+                    if (fNowSec.length == 1) fNowSec = "0" + fNowSec;
+                    if (fAllSec.length == 1) fAllSec = "0" + fAllSec;
+                    if (_ffmpegDuration > 0) {
+                        videoPlayer.videoController.slider_timeline.maximum = _ffmpegDuration;
+                        videoPlayer.videoController_under.slider_timeline.maximum = _ffmpegDuration;
+                    }
+                    videoPlayer.videoController.slider_timeline.value = ffPos;
+                    videoPlayer.videoController_under.slider_timeline.value = ffPos;
+                    videoPlayer.videoController.label_time.text = fNowMin + ":" + fNowSec + "/" + fAllMin + ":" + fAllSec;
+                    videoPlayer.videoController_under.label_time.text = fNowMin + ":" + fNowSec + "/" + fAllMin + ":" + fAllSec;
+                }
+            }
+
             //コメントを更新
             var commentArray: Vector.<NNDDComment> = this.commentManager.setComment(
                 commentTimerVpos,
@@ -2905,6 +3364,10 @@ package org.mineap.nndd.player {
                     commentManager.validateCommentPosition();
                 }
 
+                if (_ffmpegVideo != null && videoPlayer.canvas_video != null) {
+                    _ffmpegVideo.width = videoPlayer.canvas_video.width;
+                    _ffmpegVideo.height = videoPlayer.canvas_video.height;
+                }
 
             }
         }
@@ -2916,6 +3379,11 @@ package org.mineap.nndd.player {
          */
         public function seek(seekTime: Number): void {
             trace(seekTime);
+            if (_ffmpegNs != null) {
+                LogManager.instance.addLog("DMS ffmpeg: seek要求 seekTime=" + seekTime);
+                seekFfmpegStream(seekTime);
+                return;
+            }
             if (this.windowReady) {
                 if ((new Date().time) - lastSeekTime > 1000) {
                     if ((videoDisplay != null && videoDisplay.initialized && videoDisplay.duration > 0) ||
@@ -4251,7 +4719,8 @@ package org.mineap.nndd.player {
                     (url.match(new RegExp("https?://smile.*")) != null) ||
                     (url.match(new RegExp("http://[^/]+/NNDDServer/.*")) != null) ||
                     (url.match(new RegExp("rtmp[^:]*://smile.*")) != null) ||
-                    (url.match(new RegExp("https?://[a-z0-9]+\.dmc\.nico")) != null)
+                    (url.match(new RegExp("https?://[a-z0-9]+\.dmc\.nico")) != null) ||
+                    (url.match(new RegExp("https?://delivery\\.domand\\.nicovideo\\.jp")) != null)
                 ) {
 
                     /* ストリーミング再生(接続先動画サーバがわかっている時) */
@@ -4297,7 +4766,27 @@ package org.mineap.nndd.player {
                     videoPlayer.label_downloadStatus.text = "";
 
                     //ストリーミング再生のときはthis.vieoURL（videoIDが含まれる方）を使う。
-                    if (videoTitle.indexOf(".swf") != -1 || videoTitle.indexOf(".SWF") != -1) {
+                    if (this.isHLS) {
+                        if (url.match(new RegExp("https?://delivery\\.domand\\.nicovideo\\.jp")) != null) {
+                            // DMS HLS → ffmpeg → NetStream.appendBytes で AIR 内蔵 Video に再生
+                            DmsProxy.instance.start();
+                            _playWithFfmpegStream(DmsProxy.instance.proxyUrl(url), videoTitle, comments);
+                        } else {
+                            // 旧 DMC HLS → Flashls
+                            this.isPlayListingPlay = false;
+                            this.init(
+                                url,
+                                WINDOW_TYPE_FLV,
+                                comments,
+                                libraryManager.tempDir.url + "/nndd[ThumbInfo].xml",
+                                true,
+                                true,
+                                videoTitle,
+                                false,
+                                videoTitle
+                            );
+                        }
+                    } else if (videoTitle.indexOf(".swf") != -1 || videoTitle.indexOf(".SWF") != -1) {
 
                         if (playList != null && playListIndex != -1) {
                             this.initWithPlayList(
@@ -4431,7 +4920,7 @@ package org.mineap.nndd.player {
                                     }
 
                                     if (downloader.getFlvResultAnalyzer != null) {
-                                        videoInfoView.economyMode = String(downloader.getFlvResultAnalyzer.economyMode);
+                                        videoInfoView.economyMode = "";
                                         videoInfoView.nickName = downloader.getFlvResultAnalyzer.nickName;
                                         videoInfoView.isPremium = String(downloader.getFlvResultAnalyzer.isPremium);
                                     }
@@ -4530,6 +5019,14 @@ package org.mineap.nndd.player {
                             getProgressListener
                         );
                         nnddDownloaderForStreaming.addEventListener(
+                            NNDDDownloader.CREATE_DMS_SESSION_START,
+                            getProgressListener
+                        );
+                        nnddDownloaderForStreaming.addEventListener(
+                            NNDDDownloader.CREATE_DMS_SESSION_SUCCESS,
+                            getProgressListener
+                        );
+                        nnddDownloaderForStreaming.addEventListener(
                             NNDDDownloader.DOWNLOAD_PROCESS_COMPLETE,
                             getProgressListener
                         );
@@ -4575,6 +5072,10 @@ package org.mineap.nndd.player {
                             getProgressListener
                         );
                         nnddDownloaderForStreaming.addEventListener(
+                            NNDDDownloader.CREATE_DMS_SESSION_FAIL,
+                            getFailListener
+                        );
+                        nnddDownloaderForStreaming.addEventListener(
                             NNDDDownloader.DOWNLOAD_PROCESS_ERROR,
                             streamingPlayFailListener
                         );
@@ -4587,7 +5088,6 @@ package org.mineap.nndd.player {
                             UserManager.instance.password,
                             PathMaker.getVideoID(url),
                             tempDir,
-                            videoInfoView.isAlwaysEconomyForStreaming,
                             FlexGlobals.topLevelApplication.getUseOldTypeCommentGet()
                         );
 
@@ -4637,6 +5137,8 @@ package org.mineap.nndd.player {
                 status = "サムネイル画像取得失敗";
             } else if (event.type == NNDDDownloader.CREATE_DMC_SESSION_FAIL) {
                 status = "DMCサーバ接続失敗";
+            } else if (event.type == NNDDDownloader.CREATE_DMS_SESSION_FAIL) {
+                status = "DMSサーバ接続失敗";
             } else if (event.type == NNDDDownloader.VIDEO_GET_FAIL) {
                 status = "動画取得失敗";
             }
@@ -4672,6 +5174,8 @@ package org.mineap.nndd.player {
                 status = "成功";
             } else if (event.type == NNDDDownloader.CREATE_DMC_SESSION_SUCCESS) {
                 status = "成功";
+            } else if (event.type == NNDDDownloader.CREATE_DMS_SESSION_SUCCESS) {
+                status = "成功";
             } else if (event.type == NNDDDownloader.VIDEO_GET_SUCCESS) {
                 status = "成功";
             }
@@ -4694,6 +5198,8 @@ package org.mineap.nndd.player {
                 status = "サムネイル画像を取得しています...";
             } else if (event.type == NNDDDownloader.CREATE_DMC_SESSION_START) {
                 status = "DMCサーバに接続しています...";
+            } else if (event.type == NNDDDownloader.CREATE_DMS_SESSION_START) {
+                status = "DMSサーバに接続しています...";
             } else if (event.type == NNDDDownloader.VIDEO_GET_START) {
                 status = "動画を取得しています...";
             }
@@ -4745,7 +5251,7 @@ package org.mineap.nndd.player {
                         }
                     }
                     videoInfoView.videoServerUrl = url;
-                    videoInfoView.economyMode = String(downloader.getFlvResultAnalyzer.economyMode);
+                    videoInfoView.economyMode = "";
                     videoInfoView.nickName = downloader.getFlvResultAnalyzer.nickName;
                     videoInfoView.isPremium = String(downloader.getFlvResultAnalyzer.isPremium);
 

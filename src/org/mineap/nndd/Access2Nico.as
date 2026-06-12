@@ -70,7 +70,6 @@ package org.mineap.nndd {
         private var isNicowariGetting: Boolean = false;
         private var isCommentPost: Boolean = false;
         private var showOnlyPermissionIDComment: Boolean = false;
-        private var isEconomy: Boolean = true;
         private var isOtherVideo: Boolean = false;
         private var isContactTheUser: Boolean = false;
         private var isThumbImgGetting: Boolean = false;
@@ -152,6 +151,12 @@ package org.mineap.nndd {
         private var isPremium: String = "0";
 
         private var postCommentXML: XML;
+
+        // nvcomment API 用パラメータ（watchVideo v3 APIから取得）
+        private var _nvCommentThreadKey: String = null;
+        private var _nvCommentParams: Object = null;
+        private var _nvCommentUserKey: String = null;
+        private var _nvVideoTitle: String = null;
 
         private var owner_description: String = "取得できませんでした。";
         private var videoStatus: String = "サムネイル情報を取得できませんでした。";
@@ -1494,13 +1499,29 @@ package org.mineap.nndd {
         private function watchVideo(mUrl: String, type: int = VIDEO_DOWNLOAD): URLLoader {
             this.videoID = mUrl.substring(mUrl.lastIndexOf("/") + 1);
 
-            //trace("videoID:"+this.videoID);
-
             var loader: URLLoader;
+            var watchURL: URLRequest;
 
-            //そのページを見ているフリをする為のリクエストを準備する。
-            var watchURL: URLRequest = new URLRequest(mUrl);
-            watchURL.method = "GET";
+            if (type == COMMENT_DOWNLOAD) {
+                // コメント取得には v3 JSON API を使用（HTML 解析不要）
+                var actionTrackId: String = generateActionTrackId();
+                var apiUrl: String = "https://www.nicovideo.jp/api/watch/v3/" +
+                    encodeURIComponent(this.videoID) + "?actionTrackId=" + actionTrackId;
+                watchURL = new URLRequest(apiUrl);
+                watchURL.method = "GET";
+                watchURL.requestHeaders = [
+                    new URLRequestHeader("X-Frontend-Id", "6"),
+                    new URLRequestHeader("X-Frontend-Version", "0"),
+                    new URLRequestHeader("X-Niconico-Language", "ja-jp"),
+                    new URLRequestHeader("X-Request-With", "https://www.nicovideo.jp")
+                ];
+            } else {
+                // VIDEO_DOWNLOAD / NICOWARI_DOWNLOAD は従来通り HTML ページ取得
+                // URL を HTTPS に修正
+                var fixedUrl: String = mUrl.replace(/^http:\/\//, "https://");
+                watchURL = new URLRequest(fixedUrl);
+                watchURL.method = "GET";
+            }
 
             loader = new URLLoader();
             if (type == VIDEO_DOWNLOAD) {
@@ -1589,20 +1610,186 @@ package org.mineap.nndd {
          */
         private function accessWatchSuccessForComment(evt: Event): void {
             try {
-                trace("アクセス成功" + evt);
+                trace("watch v3 API アクセス成功" + evt);
                 logManager.addLog(Message.SUCCESS_ACCESS_TO_NICONICODOUGA);
 
-                videoTitle = this.getVideoName(watchLoader, false);
-                trace(videoTitle);
+                // v3 JSON API レスポンスから nvComment パラメータを取得
+                var responseStr: String = (evt.currentTarget as URLLoader).data;
+                try {
+                    var wrapper: Object = JSON.parse(responseStr);
+                    var data: Object = wrapper.data;
+                    if (data == null) {
+                        throw new Error("watch v3 API: data field missing");
+                    }
+                    // タイトル取得
+                    if (data.video != null && data.video.title != null) {
+                        _nvVideoTitle = String(data.video.title);
+                        videoTitle = _nvVideoTitle + " - [" + videoID + "]";
+                    }
+                    // nvComment パラメータ取得
+                    if (data.comment != null && data.comment.nvComment != null) {
+                        _nvCommentThreadKey = data.comment.nvComment.threadKey;
+                        _nvCommentParams = data.comment.nvComment.params;
+                    }
+                    if (data.comment != null && data.comment.keys != null) {
+                        _nvCommentUserKey = data.comment.keys.userKey;
+                    }
+                } catch (parseError: Error) {
+                    logManager.addLog("watch v3 API パース失敗:" + parseError.getStackTrace());
+                    Alert.show("ウォッチページAPIの解析に失敗しました。\n" + parseError);
+                    allClose(true);
+                    return;
+                }
 
-                //FLVのURLを取得する処理を実行。
-                downLoader = this.getAPIResult(videoID, COMMENT_DOWNLOAD);
+                // getflv を経由せず、直接 nvcomment API でコメントを取得
+                commentLoader = getCommentNv();
 
             } catch (error: Error) {
                 logManager.addLog("ニコニコ動画へのアクセスに失敗:" + error.getStackTrace());
                 Alert.show("ニコニコ動画へのアクセスに失敗。\n" + error);
                 allClose(true);
             }
+        }
+
+        private function generateActionTrackId(): String {
+            const chars: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            var rand: String = "";
+            for (var i: int = 0; i < 10; i++) {
+                rand += chars.charAt(int(Math.random() * chars.length));
+            }
+            return rand + "_" + new Date().getTime().toString();
+        }
+
+        /**
+         * nvcomment API でコメントを取得する（新仕様）。
+         * _nvCommentThreadKey, _nvCommentParams が設定済みの前提で呼ぶ。
+         */
+        private function getCommentNv(): URLLoader {
+            if (_nvCommentThreadKey == null || _nvCommentThreadKey == "") {
+                logManager.addLog("nvCommentThreadKey が取得できませんでした");
+                Alert.show("コメントのスレッドキーが取得できませんでした。");
+                allClose(true);
+                return null;
+            }
+
+            var body: Object = {
+                threadKey: _nvCommentThreadKey,
+                params: {
+                    language: (_nvCommentParams && _nvCommentParams.language) ? _nvCommentParams.language : "ja-jp",
+                    targets: (_nvCommentParams && _nvCommentParams.targets) ? _nvCommentParams.targets : []
+                },
+                additionals: {}
+            };
+
+            var req: URLRequest = new URLRequest("https://nvcomment.nicovideo.jp/v1/threads");
+            req.method = "POST";
+            req.requestHeaders = [
+                new URLRequestHeader("Content-Type", "application/json"),
+                new URLRequestHeader("X-Frontend-Id", "6"),
+                new URLRequestHeader("X-Frontend-Version", "0"),
+                new URLRequestHeader("X-Request-With", "https://www.nicovideo.jp")
+            ];
+            req.data = JSON.stringify(body);
+
+            var loader: URLLoader = new URLLoader();
+            loader.dataFormat = URLLoaderDataFormat.TEXT;
+            loader.addEventListener(Event.COMPLETE, nvCommentLoadSuccess);
+            loader.addEventListener(IOErrorEvent.IO_ERROR, ioErrorHandler);
+            loader.addEventListener(SecurityErrorEvent.SECURITY_ERROR, securityErrorHandler);
+            loader.load(req);
+
+            logManager.addLog("nvcomment API でコメント取得開始");
+            return loader;
+        }
+
+        /**
+         * nvcomment API レスポンス (JSON) を受け取り、旧 XML 形式に変換して保存まで行う。
+         */
+        private function nvCommentLoadSuccess(evt: Event): void {
+            logManager.addLog(Message.SUCCESS_DOWNLOAD_USER_COMMENT);
+            trace("nvcomment API コメント取得成功" + evt);
+
+            try {
+                var json: Object = JSON.parse((evt.currentTarget as URLLoader).data);
+                var xmlStr: String = convertNvCommentJsonToXmlStr(json);
+                // commentLoader.data に XML 文字列をセット（saveComment が使用）
+                commentLoader = evt.currentTarget as URLLoader;
+                commentLoader.data = xmlStr;
+                videoType = ".xml";
+            } catch (e: Error) {
+                logManager.addLog("nvcomment JSON 変換失敗:" + e.getStackTrace());
+                // 変換失敗でも続行（空XML）
+                commentLoader = evt.currentTarget as URLLoader;
+                commentLoader.data = "<packet/>";
+                videoType = ".xml";
+            }
+
+            if (downloadProvider != null && queueIndex != -1) {
+                downloadProvider.setItemAt({
+                    col_videoName: downloadProvider[queueIndex].col_videoName,
+                    col_videoUrl: downloadProvider[queueIndex].col_videoUrl,
+                    col_status: "コメントXML\nダウンロード成功",
+                    col_a2n: downloadProvider[queueIndex].col_a2n
+                }, queueIndex);
+            }
+
+            if (!this.saveComment(commentLoader)) {
+                logManager.addLog(Message.FAIL_SAVE_USER_COMMENT);
+            } else {
+                logManager.addLog(Message.SUCCESS_SAVE_USER_COMMENT);
+            }
+
+            if (!isCancel) {
+                // 投稿者コメントは nvcomment レスポンスに含まれているため別途取得不要。
+                // 次のステップ（サムネイル取得または完了）へ進む。
+                if (!isCommentOnly) {
+                    this.getThumbInfoByNomalDLProcess(
+                        videoURL.substring(videoURL.lastIndexOf("/") + 1),
+                        rankingIndex,
+                        !this.isStreamingPlay
+                    );
+                } else {
+                    allClose();
+                }
+            }
+        }
+
+        /**
+         * nvcomment API の JSON レスポンスを旧 XML chat 形式の文字列に変換する。
+         */
+        private function convertNvCommentJsonToXmlStr(json: Object): String {
+            var sb: String = "<packet>";
+            if (json == null || json.data == null || json.data.threads == null) return sb + "</packet>";
+
+            var threads: Array = json.data.threads as Array;
+            for each (var thread: Object in threads) {
+                if (thread.comments == null) continue;
+                var comments: Array = thread.comments as Array;
+                for each (var c: Object in comments) {
+                    var vpos: int = int(Math.round(Number(c.vposMs) / 10));
+                    var date: int = 0;
+                    if (c.postedAt) {
+                        try { date = int(new Date(String(c.postedAt)).time / 1000); } catch (e: Error) {}
+                    }
+                    var userId: String = c.userId ? String(c.userId) : "";
+                    var premium: int = Boolean(c.isPremium) ? 1 : 0;
+                    var mail: String = (c.commands && (c.commands as Array).length > 0)
+                        ? (c.commands as Array).join(" ") : "";
+                    var body: String = c.body ? String(c.body)
+                        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+                    var fork: String = thread.fork == "owner" ? " fork=\"1\"" : "";
+                    sb += "<chat thread=\"" + String(thread.id || "") + "\"" +
+                          " no=\"" + String(int(c.no || 0)) + "\"" +
+                          " vpos=\"" + String(vpos) + "\"" +
+                          " date=\"" + String(date) + "\"" +
+                          " user_id=\"" + userId + "\"" +
+                          " premium=\"" + String(premium) + "\"" +
+                          (mail ? " mail=\"" + mail + "\"" : "") +
+                          fork + ">" + body + "</chat>";
+                }
+            }
+            sb += "</packet>";
+            return sb;
         }
 
         /**
@@ -1753,56 +1940,7 @@ package org.mineap.nndd {
          */
         private function accessAPISuccessForComment(evt: Event): void {
             logManager.addLog(Message.SUCCESS_ACCESS_TO_NICOAPI);
-
-            if (isVideoGetting && !isStreamingPlay && !isOtherVideo) {
-                /* エコノミーのときのキャンセル判定 */
-                if (checkEconomy(downLoader.data) && isContactTheUser) {
-                    Alert.show(
-                        Message.M_ECONOMY_MODE_NOW,
-                        Message.M_MESSAGE,
-                        (Alert.OK | Alert.CANCEL),
-                        null,
-                        function (event: CloseEvent): void {
-                            if (event.detail == Alert.CANCEL) {
-                                videoType = "";
-                                videoDownloadCancel();
-                            } else if (event.detail == Alert.OK) {
-                                try {
-                                    isEconomy = true;
-                                    commentLoader = getComment(downLoader);
-                                } catch (error: Error) {
-                                    logManager.addLog(Message.ERROR + ":" + error.getStackTrace());
-                                    Alert.show("予期せぬ例外が発生しました。\n" + error, Message.M_ERROR);
-                                    allClose(true);
-                                }
-                            }
-                        },
-                        null,
-                        4
-                    );
-                } else {
-                    isEconomy = false;
-                    commentLoader = getComment(downLoader);
-                }
-            } else {
-                isEconomy = false;
-                commentLoader = getComment(downLoader);
-            }
-        }
-
-        /**
-         * APIから得たデータを元に、再生（ダウンロード）予定の動画がエコノミーモードかどうかチェックします。
-         * @param apiResult
-         * @return
-         *
-         */
-        private function checkEconomy(apiResult: String): Boolean {
-
-            var pattern: RegExp = new RegExp("&url=http.*low&link=");
-            if (apiResult.search(pattern) != -1) {
-                return true;
-            }
-            return false;
+            commentLoader = getComment(downLoader);
         }
 
         /**
@@ -2341,7 +2479,6 @@ package org.mineap.nndd {
 
                     //タグ情報を読み込んでライブラリに反映
                     var video: NNDDVideo = new LocalVideoInfoLoader().loadInfo(decodeURIComponent(file.url));
-                    video.isEconomy = isEconomy;
                     var localThumbImgPath: String = PathMaker.createThumbImgFilePath(decodeURIComponent(file.url));
                     if ((new File(localThumbImgPath)).exists) {
                         video.thumbUrl = localThumbImgPath;

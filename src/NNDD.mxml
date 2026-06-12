@@ -22,11 +22,19 @@
 
     <fx:Script>
 		<![CDATA[
+        import flash.desktop.NativeDragActions;
+        import flash.desktop.NativeProcess;
+        import flash.filesystem.FileMode;
+        import flash.filesystem.FileStream;
+
         import mx.controls.listClasses.IListItemRenderer;
         import mx.core.UITextField;
         import mx.events.DragEvent;
         import mx.events.TreeEvent;
         import mx.managers.DragManager;
+
+        import com.tuarua.FreSharp;
+        import com.tuarua.FreSwift;
 
         import org.mineap.nicovideo4as.model.NicoRankingUrl;
 
@@ -36,6 +44,9 @@
         import org.mineap.nndd.model.tree.TreeFileItem;
         import org.mineap.nndd.myList.MyListHistoryManager;
         import org.mineap.nndd.nativeProcessPlayer.NativeProcessPlayerManager;
+
+        private var _freSharp:FreSharp = new FreSharp();
+        private var _freSwift:FreSwift = new FreSwift();
 
         private var fileSystemTreeComplete: Boolean = false;
         private var downloadedDataGridComplete: Boolean = false;
@@ -1411,12 +1422,12 @@
                                                                                    null,
                                                                                    -1,
                                                                                    "",
-                                                                                   isAlwaysEconomy
+                                                                                   false
                         );
                     });
                     checker.expansion(str);
                 } else {
-                    PlayerManager.instance.getLastPlayerController().playMovie(str, null, -1, "", isAlwaysEconomy);
+                    PlayerManager.instance.getLastPlayerController().playMovie(str, null, -1, "", false);
                 }
             }
         }
@@ -2589,24 +2600,6 @@
                             <mx:CheckBox label="自動的にダウンロードを開始する" selected="true"
                                          id="checkbox_autoDL" click="checkBoxAutoDLChanged(event)"
                                          toolTip="ダウンロードリストに項目が追加されると自動的にダウンロードを開始します。"/>
-                            <mx:CheckBox label="エコノミーモードのときダウンロードするか確認する"
-                                         selected="true" id="checkbox_ecoDL" click="checkBoxEcoCheckChanged(event)"
-                                         toolTip="ダウンロードしようとした動画がエコノミーモードのとき、ダイアログを表示して確認を求めます。"/>
-                            <s:HGroup>
-                                <mx:CheckBox id="checkbox_ecoDLSkip" label="エコノミーモードのときダウンロードをスキップする"
-                                             click="checkBoxEcoSkipChanged(event)"
-                                             enabled="{!checkbox_ecoDL.selected}" paddingLeft="20"
-                                             selected="false"
-                                             toolTip="ダウンロードしようとした動画がエコノミーモードのとき、その動画のDLをスキップして次の動画をDLします。"/>
-                            </s:HGroup>
-                            <s:HGroup>
-                                <mx:CheckBox id="checkBox_isAlwaysEconomyMode"
-                                             label="常にエコノミーモードでダウンロードする"
-                                             click="checkBoxAlwaysEcoChanged(event)"
-                                             enabled="{!checkbox_ecoDL.selected}" paddingLeft="20"
-                                             toolTip="常にエコノミーモードでダウンロードします。ストリーミング再生をエコノミーモードで行うかどうかはPlayerのInfo画面で設定できます。"/>
-                            </s:HGroup>
-
                             <mx:CheckBox id="checkBox_useNewCommentGet"
                                          label="新しいコメントのダウンロード方式を使う" click="checkBoxUseNewCommentGet(event)"
                                          selected="true"

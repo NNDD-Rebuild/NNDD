@@ -8,6 +8,8 @@ package org.mineap.nndd {
     import flash.events.ProgressEvent;
     import flash.events.TimerEvent;
     import flash.filesystem.File;
+    import flash.filesystem.FileMode;
+    import flash.filesystem.FileStream;
     import flash.net.URLLoader;
     import flash.net.URLRequest;
     import flash.net.URLRequestHeader;
@@ -32,7 +34,10 @@ package org.mineap.nndd {
     import org.mineap.nicovideo4as.api.ApiGetBgmAccess;
     import org.mineap.nicovideo4as.loader.ThumbImgLoader;
     import org.mineap.nicovideo4as.loader.ThumbInfoLoader;
+    import org.mineap.nicovideo4as.analyzer.DmsResultAnalyzer;
     import org.mineap.nicovideo4as.loader.api.ApiDmcAccess;
+    import org.mineap.nicovideo4as.loader.api.ApiDmsAccess;
+    import org.mineap.nicovideo4as.video.DmsHlsDownloader;
     import org.mineap.nicovideo4as.loader.api.ApiGetFlvAccess;
     import org.mineap.nicovideo4as.loader.api.ApiGetWaybackkeyAccess;
     import org.mineap.nicovideo4as.model.NgUp;
@@ -82,6 +87,11 @@ package org.mineap.nndd {
         public var _dmcInfoAnalyzer: DmcInfoAnalyzer;
         public var _dmcResultAnalyzer: DmcResultAnalyzer;
 
+        public var _dmsAccess: ApiDmsAccess;
+        public var _dmsResultAnalyzer: DmsResultAnalyzer;
+        private var _dmsHlsDownloader: DmsHlsDownloader;
+        private var _dmsDownloaded: Boolean = false;
+
         private var _dmcHeartBeatTimer: Timer = null;
 
         private var _otherNNDDInfoLoader: URLLoader;
@@ -113,10 +123,7 @@ package org.mineap.nndd {
 
         private var _isVideoNotDownload: Boolean = false;
         private var _isCommentOnlyDownload: Boolean = false;
-        private var _isAskToDownloadAtEco: Boolean = true;
-        private var _isSkipDownloadAtEco: Boolean = false;
         private var _watchVideoOnly: Boolean = false;
-        private var _isAlwaysEconomy: Boolean = false;
         private var _isAppendComment: Boolean = false;
         private var _useOldType: Boolean = false;
         private var _isRedirected: Boolean = false;
@@ -308,16 +315,15 @@ package org.mineap.nndd {
          */
         public static const DOWNLOAD_PROCESS_ERROR: String = "DownloadProccessError";
 
-        /**
-         * _isSkipDownloadAtEcoがtrueに指定されている状態で動画をダウンロードしようとした際に発行されます。
-         */
-        public static const DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP: String = "DownloadProccessEconomyModeSkip";
-
         public static const CREATE_DMC_SESSION_START: String = "CreateDmcSessionStart";
         public static const CREATE_DMC_SESSION_SUCCESS: String = "CreateDmcSessionSuccess";
         public static const CREATE_DMC_SESSION_FAIL: String = "CreateDmcSessionFail";
         public static const BEAT_DMC_SESSION: String = "BeatDmcSession";
         public static const DMC_SESSION_FAIL: String = "DmcSessionFail";
+
+        public static const CREATE_DMS_SESSION_START: String = "CreateDmsSessionStart";
+        public static const CREATE_DMS_SESSION_SUCCESS: String = "CreateDmsSessionSuccess";
+        public static const CREATE_DMS_SESSION_FAIL: String = "CreateDmsSessionFail";
 
         public static const RETRY_COUNT_LIMIT: int = 10;
 
@@ -333,6 +339,9 @@ package org.mineap.nndd {
             this._dmcInfoAnalyzer = new DmcInfoAnalyzer();
             this._dmcResultAnalyzer = new DmcResultAnalyzer();
 
+            /* For DMS (new delivery system) */
+            this._dmsResultAnalyzer = new DmsResultAnalyzer();
+
             this._nicowariVideoIds = new Array();
             this._nicowariVideoUrls = new Array();
         }
@@ -346,12 +355,9 @@ package org.mineap.nndd {
          * @param saveVideoName 保存するときの動画の名前。未指定の場合は動画ページのタイトルを使う。
          * @param saveDir 保存先ディレクトリ
          * @param isStart すぐにダウンロードを開始するかどうか。trueの場合は即時実行。
-         * @param isAskToDownloadAtEco エコノミーの際にユーザー問い合わせをするかどうか。trueの場合は問い合わせを行うダイアログを表示します。
-         * @param isAlwaysEconomy 常にエコノミーモードでダウンロードするかどうか
          * @param isAppendComment 古いコメントファイルに今回ダウンロードしたコメントを追記するかどうか
          * @param maxCommentCount 古いコメントファイルにコメントを追加する際、保存するコメントの最大数
          * @param useOldType 旧形式でコメントを取得するかどうかです。これは通常コメントの取得でのみ有効で、過去コメント、投稿者コメントでは無視されます。
-         * @param isSkipDownloadAtEco エコノミーの際に動画をスキップするかどうか この設定はisAskToDownloadAtEcoがfalseの場合にのみ有効です。
          */
         public function requestDownload(user: String,
                                         password: String,
@@ -359,12 +365,9 @@ package org.mineap.nndd {
                                         saveVideoName: String,
                                         saveDir: File,
                                         isStart: Boolean,
-                                        isAskToDownloadAtEco: Boolean,
-                                        isAlwaysEconomy: Boolean,
                                         isAppendComment: Boolean,
                                         maxCommentCount: Number,
-                                        useOldType: Boolean,
-                                        isSkipDownloadAtEco: Boolean
+                                        useOldType: Boolean
         ): void {
 
             trace("start - requestDownload(" + user + ", ****, " + videoId + ", " + saveDir.nativePath + ")");
@@ -372,12 +375,9 @@ package org.mineap.nndd {
             this._videoId = videoId;
             this._thumbInfoId = videoId;
             this._saveDir = saveDir;
-            this._isAskToDownloadAtEco = isAskToDownloadAtEco;
-            this._isAlwaysEconomy = isAlwaysEconomy;
             this._isAppendComment = isAppendComment;
             this._maxCommentCount = maxCommentCount;
             this._useOldType = useOldType;
-            this._isSkipDownloadAtEco = isSkipDownloadAtEco;
 
             //ストリーミング再生の時のファイル名は「nndd」。それ以外のときは「ファイル名+[動画ID]」
             if (saveVideoName != null && saveVideoName != "" && saveVideoName != "nndd") {
@@ -428,7 +428,6 @@ package org.mineap.nndd {
                                                     password: String,
                                                     videoId: String,
                                                     saveDir: File,
-                                                    isAlwaysEconomy: Boolean,
                                                     useOldType: Boolean
         ): void {
 
@@ -443,11 +442,8 @@ package org.mineap.nndd {
                 saveDir,
                 true,
                 false,
-                isAlwaysEconomy,
-                false,
                 2000,
-                useOldType,
-                false
+                useOldType
             );
 
         }
@@ -469,7 +465,6 @@ package org.mineap.nndd {
                                                      videoId: String,
                                                      videoName: String,
                                                      saveDir: File,
-                                                     isAlwaysEconomy: Boolean,
                                                      isAppendComment: Boolean,
                                                      when: Date,
                                                      maxCommentCount: Number,
@@ -486,12 +481,9 @@ package org.mineap.nndd {
                 videoName,
                 saveDir,
                 true,
-                false,
-                isAlwaysEconomy,
                 isAppendComment,
                 maxCommentCount,
-                useOldType,
-                false
+                useOldType
             );
         }
 
@@ -511,7 +503,6 @@ package org.mineap.nndd {
                                                       videoId: String,
                                                       videoName: String,
                                                       saveDir: File,
-                                                      isAlwaysEconomy: Boolean,
                                                       isAppendComment: Boolean,
                                                       when: Date,
                                                       maxCommentCount: Number,
@@ -529,12 +520,9 @@ package org.mineap.nndd {
                 videoName,
                 saveDir,
                 true,
-                false,
-                isAlwaysEconomy,
                 isAppendComment,
                 maxCommentCount,
-                useOldType,
-                false
+                useOldType
             );
 
         }
@@ -568,11 +556,8 @@ package org.mineap.nndd {
                 File.documentsDirectory,
                 true,
                 false,
-                false,
-                false,
                 2000,
-                useOldType,
-                false
+                useOldType
             );
 
         }
@@ -673,9 +658,6 @@ package org.mineap.nndd {
 
             //this._videoIdの動画のページを見に行く
             var videoId: String = this._videoId;
-            if (this._isAlwaysEconomy) {
-                videoId += "?eco=1";
-            }
 
             // 動画IDとしてスレッドIDがわたってきたときは、threadIDとしても使用する
             var regexp: RegExp = new RegExp("\\d+");
@@ -949,6 +931,13 @@ package org.mineap.nndd {
          *
          */
         private function getFlvAccess(): void {
+            if (_watchVideo != null && _watchVideo.isDms) {
+                // DMS (新配信): getFlv API は廃止。空の analyzer でコメント取得へ進む。
+                _flvResultAnalyzer = new GetFlvResultAnalyzer();
+                getWaybackkeyAccess();
+                return;
+            }
+
             this._getflvAccess = new ApiGetFlvAccess();
             //APIアクセス開始
             this._getflvAccess.addEventListener(IOErrorEvent.IO_ERROR, function (event: ErrorEvent): void {
@@ -972,7 +961,7 @@ package org.mineap.nndd {
             LogManager.instance.addLog(GETFLV_API_ACCESS_START + ":" + this._threadId + "(" + this._videoId + ")");
             dispatchEvent(new Event(GETFLV_API_ACCESS_START));
 
-            this._getflvAccess.getAPIResult(this._threadId, this._isAlwaysEconomy);
+            this._getflvAccess.getAPIResult(this._threadId);
 
         }
 
@@ -1112,15 +1101,14 @@ package org.mineap.nndd {
             LogManager.instance.addLog(COMMENT_GET_START + ":" + this._videoId);
             dispatchEvent(new Event(COMMENT_GET_START));
 
-            //通常コメントを1000件取りにいく
-            this._commentLoader.getComment(
-                this._videoId,
-                1000,
-                false,
-                this._flvResultAnalyzer,
-                this._when,
-                this._waybackkey,
-                this._useOldType
+            //nvcomment API でコメントを取得（新仕様）
+            var nvParams: Object = this._watchVideo.nvCommentParams;
+            this._commentLoader.getNvComment(
+                this._watchVideo.nvCommentThreadKey,
+                nvParams ? nvParams.targets : [],
+                nvParams ? nvParams.language : "ja-jp",
+                this._watchVideo.userKey,
+                this._watchVideo.nvCommentServerUrl
             );
         }
 
@@ -1163,39 +1151,7 @@ package org.mineap.nndd {
          *
          */
         private function commentGetSuccess(event: Event): void {
-
-            var economyMode: Boolean = this._commentLoader.economyMode;
-
-            if (economyMode && saveVideoName != "nndd") {
-
-                if (this._isAskToDownloadAtEco) {
-                    Alert.show(
-                        "現在エコノミーモードです。ダウンロードしますか？",
-                        Message.M_MESSAGE,
-                        (Alert.YES | Alert.NO),
-                        null,
-                        function (closeEvent: CloseEvent): void {
-                            if (closeEvent.detail == Alert.YES) {
-                                ownerCommentGetStart(event.currentTarget as CommentLoader);
-                            } else {
-                                trace(DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP + ":" + event);
-                                dispatchEvent(new Event(DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP));
-                                close(false, false, null);
-                            }
-                        }
-                    );
-                } else if (this._isAskToDownloadAtEco == false && this._isSkipDownloadAtEco) {
-                    trace(DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP + ":" + event);
-                    dispatchEvent(new Event(DOWNLOAD_PROCESS_ECONOMY_MODE_SKIP));
-                    close(false, false, null);
-                } else {
-                    ownerCommentGetStart(event.currentTarget as CommentLoader);
-                }
-
-            } else {
-                ownerCommentGetStart(event.currentTarget as CommentLoader);
-            }
-
+            ownerCommentGetStart(event.currentTarget as CommentLoader);
         }
 
         /**
@@ -1234,45 +1190,56 @@ package org.mineap.nndd {
             trace(COMMENT_GET_SUCCESS + ":" + loader + "\n" + path);
             dispatchEvent(new Event(COMMENT_GET_SUCCESS));
 
-            this._ownerCommentLoader = new CommentLoader();
-            this._ownerCommentLoader.addEventListener(CommentLoader.COMMENT_GET_SUCCESS, ownerCommentGetSuccess);
-            this._ownerCommentLoader.addEventListener(
-                CommentLoader.COMMENT_GET_FAIL,
-                function (event: ErrorEvent): void {
-                    (event.target as CommentLoader).close();
-                    trace(OWNER_COMMENT_GET_FAIL + ":" + event + ":" + event.target + ":" + event.text);
-                    LogManager.instance.addLog(OWNER_COMMENT_GET_FAIL + ":" + _videoId + ":" + event + ":" +
-                                               event.target + ":" + event.text);
-                    dispatchEvent(new IOErrorEvent(
-                        OWNER_COMMENT_GET_FAIL,
-                        false,
-                        false,
-                        event.text
-                    ));
-                    close(true, true, event);
-                }
-            );
-            this._ownerCommentLoader.addEventListener(
-                HTTPStatusEvent.HTTP_RESPONSE_STATUS,
-                function (event: HTTPStatusEvent): void {
-                    trace(event);
-                    LogManager.instance.addLog("\t\t" + HTTPStatusEvent.HTTP_RESPONSE_STATUS + ":" + event);
-                }
-            );
-
             trace(OWNER_COMMENT_GET_START + ":" + this._videoId);
             LogManager.instance.addLog(OWNER_COMMENT_GET_START + ":" + this._videoId);
             dispatchEvent(new Event(OWNER_COMMENT_GET_START));
 
-            //isOwner=trueでコメントを取得しにいく。過去コメントは取りに行かない。
-            this._ownerCommentLoader.getComment(
-                this._videoId,
-                1000,
-                true,
-                this._flvResultAnalyzer,
-                null,
-                null
-            );
+            // nvcomment API では投稿者コメント(fork=owner)は通常コメント取得時に含まれる。
+            // 再取得は不要。_commentLoader の XML・threadId をそのまま利用して即時完了。
+            this._ownerCommentLoader = this._commentLoader;
+            this._threadId = this._commentLoader.threadId;
+
+            // コメントXMLを保存（ダウンロード/ストリーミング共通）
+            if (loader.xml != null) {
+                try {
+                    var commentFile: File = _saveDir.resolvePath(_saveVideoName + ".xml");
+                    var commentStream: FileStream = new FileStream();
+                    commentStream.open(commentFile, FileMode.WRITE);
+                    commentStream.writeUTFBytes(loader.xml.toXMLString());
+                    commentStream.close();
+                    LogManager.instance.addLog("コメントXML保存:" + commentFile.nativePath);
+                } catch (commentSaveError: Error) {
+                    LogManager.instance.addLog("コメントXML保存失敗:" + commentSaveError.getStackTrace());
+                }
+            }
+
+            var ownerPath: String = "";
+            LogManager.instance.addLog("\t" + OWNER_COMMENT_GET_SUCCESS + ":" + ownerPath);
+            trace(OWNER_COMMENT_GET_SUCCESS + ":(nvComment included in main fetch)");
+            dispatchEvent(new Event(OWNER_COMMENT_GET_SUCCESS));
+
+            if (this._isCommentOnlyDownload) {
+                trace(DOWNLOAD_PROCESS_COMPLETE + ":(commentOnly)");
+                dispatchEvent(new Event(DOWNLOAD_PROCESS_COMPLETE));
+                close(false, false);
+            } else {
+                this._nicowariVideoIds = this.searchAtCMInstruction(this._commentLoader.xml);
+                if (this._nicowariVideoIds.length == 0) {
+                    switcher();
+                } else {
+                    this._getbgmAccess = new ApiGetBgmAccess();
+                    this._getbgmAccess.addEventListener(ApiGetBgmAccess.SUCCESS, getNicowariUrlsSuccess);
+                    this._getbgmAccess.addEventListener(ApiGetBgmAccess.FAIL, function (event: IOErrorEvent): void {
+                        (event.currentTarget as ApiGetBgmAccess).close();
+                        trace(NICOWARI_GET_FAIL + ":" + event + ":" + event.target + ":" + event.text);
+                        LogManager.instance.addLog(NICOWARI_GET_FAIL + ":" + _videoId + ":" + event + ":" +
+                                                   event.target + ":" + event.text);
+                        dispatchEvent(new IOErrorEvent(NICOWARI_GET_FAIL, false, false, event.text));
+                        close(true, true, event);
+                    });
+                    this._getbgmAccess.getAPIResult(this._threadId);
+                }
+            }
 
         }
 
@@ -1560,6 +1527,144 @@ package org.mineap.nndd {
             return request;
         }
 
+        private function createDmsSession(): void {
+            var videos: Array = _watchVideo.domandVideos;
+            var audios: Array = _watchVideo.domandAudios;
+
+            LogManager.instance.addLog("DMS: 利用可能なビデオストリーム: " + JSON.stringify(videos));
+            var bestVideo: Object = null;
+            // VP9優先 (CEFがVP9 MSEをサポート)、なければH.264
+            for each (var v: Object in videos) {
+                var vid: String = String(v.id).toLowerCase();
+                if (v.isAvailable && (vid.indexOf("vp9") >= 0 || vid.indexOf("h264") >= 0 || vid.indexOf("avc") >= 0)) {
+                    if (bestVideo == null || int(v.qualityLevel) > int(bestVideo.qualityLevel)) {
+                        bestVideo = v;
+                    }
+                }
+            }
+            // H.264が見つからなければ任意の利用可能なストリームにフォールバック
+            if (bestVideo == null) {
+                LogManager.instance.addLog("DMS: H.264ストリームが見つかりません。利用可能なストリーム: " + JSON.stringify(videos));
+                for each (var vAny: Object in videos) {
+                    if (vAny.isAvailable && (bestVideo == null || int(vAny.qualityLevel) > int(bestVideo.qualityLevel))) {
+                        bestVideo = vAny;
+                    }
+                }
+            }
+            if (bestVideo != null) {
+                LogManager.instance.addLog("DMS: 選択ビデオストリーム: " + String(bestVideo.id));
+            }
+            var bestAudio: Object = null;
+            for each (var a: Object in audios) {
+                if (a.isAvailable && (bestAudio == null || int(a.qualityLevel) > int(bestAudio.qualityLevel))) {
+                    bestAudio = a;
+                }
+            }
+
+            if (bestVideo == null || bestAudio == null) {
+                LogManager.instance.addLog(CREATE_DMS_SESSION_FAIL + ":" + _videoId + ": 利用可能なストリームがありません");
+                var noStreamErr: IOErrorEvent = new IOErrorEvent(CREATE_DMS_SESSION_FAIL, false, false, "利用可能なストリームがありません");
+                dispatchEvent(noStreamErr);
+                close(true, true, noStreamErr);
+                return;
+            }
+
+            _dmsAccess = new ApiDmsAccess();
+            _dmsAccess.addEventListener(Event.COMPLETE, createDmsSessionSuccess);
+            _dmsAccess.addEventListener(IOErrorEvent.IO_ERROR, function(e: IOErrorEvent): void {
+                LogManager.instance.addLog(CREATE_DMS_SESSION_FAIL + ":" + _videoId + ":" + e.text);
+                dispatchEvent(new IOErrorEvent(CREATE_DMS_SESSION_FAIL, false, false, e.text));
+                close(true, true, e);
+            });
+            _dmsAccess.addEventListener(HTTPStatusEvent.HTTP_RESPONSE_STATUS, function(e: HTTPStatusEvent): void {
+                LogManager.instance.addLog("\t\t" + HTTPStatusEvent.HTTP_RESPONSE_STATUS + ":" + e);
+            });
+
+            trace(CREATE_DMS_SESSION_START + ":" + _videoId);
+            LogManager.instance.addLog(CREATE_DMS_SESSION_START + ":" + _videoId);
+            dispatchEvent(new Event(CREATE_DMS_SESSION_START));
+            dispatchEvent(new Event(VIDEO_GET_START));
+
+            _dmsAccess.createDmsSession(
+                _videoId,
+                _watchVideo.domandAccessRightKey,
+                String(bestVideo.id),
+                String(bestAudio.id)
+            );
+        }
+
+        private function createDmsSessionSuccess(event: Event): void {
+            _dmsAccess.removeEventListener(Event.COMPLETE, createDmsSessionSuccess);
+            _dmsResultAnalyzer.analyze(_dmsAccess.data);
+
+            if (!_dmsResultAnalyzer.isValid) {
+                LogManager.instance.addLog(CREATE_DMS_SESSION_FAIL + ":" + _videoId + ": contentUrl が取得できません");
+                var err: IOErrorEvent = new IOErrorEvent(CREATE_DMS_SESSION_FAIL, false, false, "contentUrl が取得できません");
+                dispatchEvent(err);
+                close(true, true, err);
+                return;
+            }
+
+            trace(CREATE_DMS_SESSION_SUCCESS + ":" + _videoId);
+            LogManager.instance.addLog(CREATE_DMS_SESSION_SUCCESS + ":" + _videoId);
+            dispatchEvent(new Event(CREATE_DMS_SESSION_SUCCESS));
+
+            var masterUrl: String = _dmsResultAnalyzer.contentUrl;
+            LogManager.instance.addLog("DMS ストリーム URL: " + masterUrl);
+
+            if (_isVideoNotDownload) {
+                // ストリーミングモード: DMS URL を Flashls に直接渡す
+                _streamingUrl = masterUrl;
+                dispatchEvent(new Event(DOWNLOAD_PROCESS_COMPLETE));
+                close(false, false);
+            } else {
+                // ダウンロードモード: 全セグメントDL → ffmpeg mux
+                _dmsHlsDownloader = new DmsHlsDownloader();
+                _dmsHlsDownloader.logCallback = function(msg: String): void {
+                    LogManager.instance.addLog(msg);
+                };
+                _dmsHlsDownloader.addEventListener(DmsHlsDownloader.COMPLETE, onDmsHlsComplete);
+                _dmsHlsDownloader.addEventListener(DmsHlsDownloader.PROGRESS, onDmsHlsProgress);
+                _dmsHlsDownloader.addEventListener(DmsHlsDownloader.ERROR,    onDmsHlsError);
+                LogManager.instance.addLog("DmsHlsDownloader.startDownload 呼び出し");
+                _dmsHlsDownloader.startDownload(masterUrl, _saveDir,
+                    HtmlUtil.convertSpecialCharacterNotIncludedString(_saveVideoName));
+            }
+        }
+
+        private function onDmsHlsComplete(event: Event): void {
+            _dmsHlsDownloader.removeEventListener(DmsHlsDownloader.COMPLETE, onDmsHlsComplete);
+            _dmsHlsDownloader.removeEventListener(DmsHlsDownloader.PROGRESS, onDmsHlsProgress);
+            _dmsHlsDownloader.removeEventListener(DmsHlsDownloader.ERROR,    onDmsHlsError);
+
+            _dmsDownloaded = true;
+            _streamingUrl  = _dmsHlsDownloader.outputPath;
+            _savedVideoPath = decodeURIComponent(new File(_dmsHlsDownloader.outputPath).url);
+            LogManager.instance.addLog("DMSダウンロード完了: " + _streamingUrl);
+
+            dispatchEvent(new Event(DOWNLOAD_PROCESS_COMPLETE));
+            close(false, false);
+        }
+
+        private function onDmsHlsProgress(event: flash.events.ProgressEvent): void {
+            LogManager.instance.addLog("DMSダウンロード進捗: " +
+                int(event.bytesLoaded) + "/" + int(event.bytesTotal) + " セグメント");
+            var fakeMB: Number = 1024 * 1024;
+            dispatchEvent(new flash.events.ProgressEvent(VIDEO_DOWNLOAD_PROGRESS, false, false,
+                event.bytesLoaded * fakeMB, event.bytesTotal * fakeMB));
+        }
+
+        private function onDmsHlsError(event: ErrorEvent): void {
+            _dmsHlsDownloader.removeEventListener(DmsHlsDownloader.COMPLETE, onDmsHlsComplete);
+            _dmsHlsDownloader.removeEventListener(DmsHlsDownloader.PROGRESS, onDmsHlsProgress);
+            _dmsHlsDownloader.removeEventListener(DmsHlsDownloader.ERROR,    onDmsHlsError);
+
+            LogManager.instance.addLog(CREATE_DMS_SESSION_FAIL + ": " + event.text);
+            var err: IOErrorEvent = new IOErrorEvent(CREATE_DMS_SESSION_FAIL, false, false, event.text);
+            dispatchEvent(err);
+            close(true, true, err);
+        }
+
         private function createDmcSession(): void {
             this._dmcAccess = new ApiDmcAccess();
             // Register EventListeners
@@ -1628,6 +1733,12 @@ package org.mineap.nndd {
         }
 
         private function switcher(): void {
+            // DMS (新配信) 優先
+            if (this._watchVideo.isDms && !this._dmsResultAnalyzer.isValid) {
+                createDmsSession();
+                return;
+            }
+
             if (!this._watchVideo.isDmc) {
                 this._dmcAccess = null;
             }
@@ -1650,8 +1761,8 @@ package org.mineap.nndd {
 
         private function getVideo(): void {
 
-            // 他のNNDDからの取得が許可されているなら、他のNNDDが持っていないかチェックしにいく(ただし強制エコノミーの時は見に行かない)
-            if (this._isEnableGetVideoFromOtherNNDDServer && !this._isAlwaysEconomy) {
+            // 他のNNDDからの取得が許可されているなら、他のNNDDが持っていないかチェックしにいく
+            if (this._isEnableGetVideoFromOtherNNDDServer) {
                 var timeout: int = 1000;
 
                 var timeoutStr: String = ConfigManager.getInstance().getItem("connectToNnddServerTimeout");
@@ -1856,6 +1967,8 @@ package org.mineap.nndd {
         }
 
         public function get isHLS(): Boolean {
+            if (_dmsDownloaded) return false; // ローカル MP4 再生
+            if (_watchVideo != null && _watchVideo.isDms && _isVideoNotDownload) return true;
             return this._dmcInfoAnalyzer.isHLSAvailable && this._isVideoNotDownload;
         }
 
@@ -2151,9 +2264,7 @@ package org.mineap.nndd {
          *
          */
         public function get isEconomyMode(): Boolean {
-            var fromVideoLoader: Boolean = this._videoLoader != null && this._videoLoader.economyMode;
-            var fromCommentLoader: Boolean = this._commentLoader != null && this._commentLoader.economyMode;
-            return fromVideoLoader || fromCommentLoader;
+            return false;
         }
 
         /**

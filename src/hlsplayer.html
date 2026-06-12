@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { margin:0; padding:0; overflow:hidden; background:#000; }
+video { width:100vw; height:100vh; display:block; }
+</style>
+</head>
+<body>
+<div id="dbg" style="position:fixed;top:0;left:0;color:lime;background:rgba(0,0,0,.7);font-size:11px;padding:4px;z-index:999;max-width:100%;word-break:break-all"></div>
+<video id="v" autoplay playsinline></video>
+<script src="hls.min.js"></script>
+<script>
+var video = document.getElementById('v');
+var dbg = document.getElementById('dbg');
+var hls = null;
+
+var _logLines = [];
+function log(msg) {
+  _logLines.push(msg);
+  if (_logLines.length > 6) _logLines.shift();
+  dbg.textContent = _logLines.join('\n');
+}
+
+// CEF build may incorrectly return false for supported codecs — patch to allow actual decode attempt
+if (window.MediaSource && MediaSource.isTypeSupported) {
+  var _origIsTypeSupported = MediaSource.isTypeSupported.bind(MediaSource);
+  MediaSource.isTypeSupported = function(mimeType) {
+    var original = _origIsTypeSupported(mimeType);
+    if (original) return true;
+    // Force-accept standard MP4 video/audio codecs
+    var lc = mimeType.toLowerCase();
+    if ((lc.indexOf('video/mp4') >= 0 || lc.indexOf('audio/mp4') >= 0 ||
+         lc.indexOf('video/webm') >= 0 || lc.indexOf('audio/webm') >= 0) &&
+        (lc.indexOf('avc1') >= 0 || lc.indexOf('mp4a') >= 0 ||
+         lc.indexOf('vp8') >= 0 || lc.indexOf('vp9') >= 0 ||
+         lc.indexOf('opus') >= 0)) {
+      return true;
+    }
+    return false;
+  };
+}
+
+function codecInfo() {
+  var ms = window.MediaSource;
+  if (!ms) return 'MSE:none';
+  var avc = _origIsTypeSupported ? _origIsTypeSupported('video/mp4; codecs="avc1.64002a"') : '?';
+  var aac = _origIsTypeSupported ? _origIsTypeSupported('audio/mp4; codecs="mp4a.40.2"') : '?';
+  return 'native:avc1=' + avc + ' aac=' + aac;
+}
+
+function loadUrl(url) {
+  if (hls) { hls.destroy(); hls = null; }
+  var ua = navigator.userAgent;
+  var vp9 = window.MediaSource ? MediaSource.isTypeSupported('video/webm; codecs="vp9"') : false;
+  var videoMp4 = video.canPlayType('video/mp4; codecs="avc1.64002a"');
+  log('UA=' + ua.substring(0, 80) + ' vp9=' + vp9 + ' video.mp4=' + videoMp4);
+  if (Hls.isSupported()) {
+    log('hls.js supported | ' + codecInfo());
+    hls = new Hls({ enableWorker: false });
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+      log('manifest parsed, playing');
+      video.play();
+    });
+    hls.on(Hls.Events.ERROR, function(event, data) {
+      log('HLS ERROR: ' + data.type + ' / ' + data.details + (data.response ? ' status=' + data.response.code : '') + ' | ' + codecInfo());
+      if (window.nnddCallback) window.nnddCallback('error', data.details);
+    });
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    log('native HLS, loading directly');
+    video.src = url;
+    video.play();
+  } else {
+    log('ERROR: HLS not supported in this browser');
+  }
+}
+
+// called from AS3: webView.callJavascriptFunction("hlsLoad", ...)
+function hlsLoad(url) { loadUrl(url); }
+function hlsSeek(t)   { video.currentTime = t; }
+function hlsPause()   { video.pause(); }
+function hlsPlay()    { video.play(); }
+function hlsGetTime() { return video.currentTime; }
+
+// notify AS3 of current time
+setInterval(function() {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nnddTime) {
+    window.webkit.messageHandlers.nnddTime.postMessage(video.currentTime);
+  }
+}, 500);
+
+// auto-load from query param
+var params = new URLSearchParams(location.search);
+var url = params.get('url');
+if (url) loadUrl(url);
+</script>
+</body>
+</html>
