@@ -137,4 +137,4 @@ libs/*.swc
 !libs/WebViewANE.swc
 !libs/FreSharp.ane
 !libs/FreSwift.ane
-!libs/WebViewANE.ane
+# !libs/WebViewANE.ane — 272MB: GitHub Releases経由でCI取得

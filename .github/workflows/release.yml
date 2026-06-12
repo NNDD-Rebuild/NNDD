@@ -52,6 +52,12 @@ jobs:
           unzip AdobeAIRSDK.zip -d $AIR_HOME
           cp OSMF2_0.swc $AIR_HOME/frameworks/libs/osmf.swc
 
+      - name: download WebViewANE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download libs --repo NNDD-Rebuild/NNDD --pattern "WebViewANE.ane" --dir libs
+
       - name: category list update
         run: |
           (cd utils/category_list_update && npm ci)
