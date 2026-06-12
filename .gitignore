@@ -131,3 +131,10 @@ containers/builder/*.tar.gz
 containers/builder/*.swc
 libs/*.ane
 libs/*.swc
+# ANE/SWC files managed in git (small files + LFS for large ones)
+!libs/FreSharp.swc
+!libs/FreSwift.swc
+!libs/WebViewANE.swc
+!libs/FreSharp.ane
+!libs/FreSwift.ane
+!libs/WebViewANE.ane
