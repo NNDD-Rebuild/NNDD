@@ -68,7 +68,7 @@ jobs:
 
       - name: build
         env:
-          certificate_password: ${{ secrets.NNDD_5CH_CERTIFICATE_PASSWORD }}
+          certificate_password: ${{ secrets.NNDD_RE }}
         shell: pwsh
         run: |
           Set-Location src
