@@ -4,10 +4,99 @@ on:
     types:
       - published
 jobs:
-  build-air:
-    runs-on: ubuntu-latest
-    outputs:
-      slug: ${{ steps.slug.outputs.text }}
+  build-exe:
+    runs-on: windows-latest
+    env:
+      AIR_HOME: C:\airsdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: actions/cache@v4
+        id: apache_flex_cache
+        with:
+          path: apache-flex-sdk-4.16.1-bin.tar.gz
+          key: https://dlcdn.apache.org/flex/4.16.1/binaries/apache-flex-sdk-4.16.1-bin.tar.gz
+      - if: steps.apache_flex_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: curl https://dlcdn.apache.org/flex/4.16.1/binaries/apache-flex-sdk-4.16.1-bin.tar.gz -O
+
+      - uses: actions/cache@v4
+        id: adobe_airsdk_cache
+        with:
+          path: AdobeAIRSDK.zip
+          key: http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip
+          enableCrossOsArchive: true
+      - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: curl http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip -O
+
+      - uses: actions/cache@v4
+        id: flex_osmf20_cache
+        with:
+          path: OSMF2_0.swc
+          key: https://sourceforge.net/adobe/flexsdk/code/HEAD/tree/trunk/frameworks/libs/OSMF2_0.swc?format=raw
+      - if: steps.flex_osmf20_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: curl https://sourceforge.net/adobe/flexsdk/code/HEAD/tree/trunk/frameworks/libs/OSMF2_0.swc?format=raw -o OSMF2_0.swc
+
+      - name: setup
+        shell: bash
+        run: |
+          tar xzf apache-flex-sdk-4.16.1-bin.tar.gz
+          mv apache-flex-sdk-4.16.1-bin /c/airsdk
+          unzip AdobeAIRSDK.zip -d /c/airsdk
+          cp OSMF2_0.swc /c/airsdk/frameworks/libs/osmf.swc
+
+      - name: download WebViewANE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release download libs --repo NNDD-Rebuild/NNDD --pattern "WebViewANE.ane" --dir libs
+
+      - name: category list update
+        shell: bash
+        run: |
+          (cd utils/category_list_update && npm ci)
+          utils/category_list_update/node_modules/.bin/ts-node utils/category_list_update/fetch_ranking_genre_tags.ts > src/CategoryList.json
+
+      - name: build
+        env:
+          certificate_password: ${{ secrets.NNDD_5CH_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          Set-Location src
+          & "$env:AIR_HOME\bin\amxmlc.bat" NNDD.mxml `
+            -source-path ..\nicovideo4as\src `
+            -include-libraries ..\libs\flashlsOSMF.swc ..\libs\airhttpd-0.5-mineap-0.1.swc ..\libs\NativeApplicationUpdater-0.5.1.swc ..\libs\FreSharp.swc ..\libs\FreSwift.swc ..\libs\WebViewANE.swc `
+            -warnings=false -output NNDD.swf
+          java -jar "$env:AIR_HOME\lib\adt.jar" -package -tsa none `
+            -storetype pkcs12 -keystore ..\nndd-5ch_certificate.pfx -storepass "$env:certificate_password" `
+            -target native NNDD.exe NNDD-app.xml NNDD.swf `
+            icon32.png icon128.png icon48.png icon16.png CategoryList.json hlsplayer.html hls.min.js `
+            -extdir ..\libs
+
+      - name: tag slug
+        id: slug
+        shell: bash
+        run: echo $GITHUB_REF | sed -r -e 's/.*\/([^/]+)$/\1/' -e 's/\./_/g' -e 's/^/text=/' >> $GITHUB_OUTPUT
+
+      - name: rename exe
+        shell: bash
+        run: mv src/NNDD.exe NNDD_${{ steps.slug.outputs.text }}.exe
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: NNDD_${{ steps.slug.outputs.text }}.exe
+
+  build-dmg:
+    runs-on: macos-latest
     env:
       AIR_HOME: /opt/airsdk
     steps:
@@ -31,11 +120,10 @@ jobs:
       - uses: actions/cache@v4
         id: adobe_airsdk_cache
         with:
-          path: AdobeAIRSDK.zip
-          key: http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip
-          enableCrossOsArchive: true
+          path: AdobeAIRSDK.dmg
+          key: https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg
       - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
-        run: curl http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip -O
+        run: curl https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg -O
 
       - uses: actions/cache@v4
         id: flex_osmf20_cache
@@ -49,14 +137,14 @@ jobs:
         run: |
           tar xzf apache-flex-sdk-4.16.1-bin.tar.gz
           mv apache-flex-sdk-4.16.1-bin $AIR_HOME
-          unzip AdobeAIRSDK.zip -d $AIR_HOME
+          hdiutil mount AdobeAIRSDK.dmg
+          ditto '/Volumes/AIR SDK' $AIR_HOME
           cp OSMF2_0.swc $AIR_HOME/frameworks/libs/osmf.swc
 
       - name: download WebViewANE
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download libs --repo NNDD-Rebuild/NNDD --pattern "WebViewANE.ane" --dir libs
+        run: gh release download libs --repo NNDD-Rebuild/NNDD --pattern "WebViewANE.ane" --dir libs
 
       - name: category list update
         run: |
@@ -71,83 +159,20 @@ jobs:
           $AIR_HOME/bin/amxmlc NNDD.mxml \
             -source-path ../nicovideo4as/src \
             -include-libraries ../libs/flashlsOSMF.swc ../libs/airhttpd-0.5-mineap-0.1.swc ../libs/NativeApplicationUpdater-0.5.1.swc ../libs/FreSharp.swc ../libs/FreSwift.swc ../libs/WebViewANE.swc \
-            -warnings=false
+            -warnings=false -output NNDD.swf
           java -jar $AIR_HOME/lib/adt.jar -package -tsa none \
             -storetype pkcs12 -keystore ../nndd-5ch_certificate.pfx -storepass "$certificate_password" \
-            NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json \
+            -target native NNDD.dmg NNDD-app.xml NNDD.swf \
+            icon32.png icon128.png icon48.png icon16.png CategoryList.json hlsplayer.html hls.min.js \
             -extdir ../libs
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: air
-          path: src/NNDD.air
 
       - name: tag slug
         id: slug
         run: echo $GITHUB_REF | sed -r -e 's/.*\/([^/]+)$/\1/' -e 's/\./_/g' -e 's/^/text=/' >> $GITHUB_OUTPUT
 
-      - name: move module
-        run: mv src/NNDD.air NNDD_${{ steps.slug.outputs.text }}.air
+      - name: rename dmg
+        run: mv src/NNDD.dmg NNDD_${{ steps.slug.outputs.text }}.dmg
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: NNDD_${{ steps.slug.outputs.text }}.air
-
-  build-exe:
-    needs: build-air
-    runs-on: windows-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: air
-
-      - uses: actions/cache@v4
-        id: adobe_airsdk_cache
-        with:
-          path: AdobeAIRSDK.zip
-          key: http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip
-          enableCrossOsArchive: true
-      - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
-        run: curl http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip -O
-
-      - name: setup
-        shell: bash
-        run: |
-          unzip AdobeAIRSDK.zip -d air
-
-      - name: build
-        run: |
-          air/bin/adt.bat -package -tsa none -target native NNDD_${{ needs.build-air.outputs.slug }}.exe NNDD.air
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: NNDD_${{ needs.build-air.outputs.slug }}.exe
-
-  build-dmg:
-    needs: build-air
-    runs-on: macos-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: air
-
-      - uses: actions/cache@v4
-        id: adobe_airsdk_cache
-        with:
-          path: AdobeAIRSDK.dmg
-          key: https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg
-      - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
-        run: curl https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg -O
-
-      - name: setup
-        run: |
-          hdiutil mount AdobeAIRSDK.dmg
-          ditto '/Volumes/AIR SDK' air
-
-      - name: build
-        run: |
-          air/bin/adt -package -target native NNDD_${{ needs.build-air.outputs.slug }}.dmg NNDD.air
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: NNDD_${{ needs.build-air.outputs.slug }}.dmg
+          files: NNDD_${{ steps.slug.outputs.text }}.dmg

@@ -9,14 +9,87 @@ on:
       - nicovideo4as
   workflow_dispatch:
 jobs:
-  build-air:
-    runs-on: ubuntu-latest
+  build-exe:
+    runs-on: windows-latest
+    env:
+      AIR_HOME: C:\airsdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - uses: actions/cache@v4
+        id: apache_flex_cache
+        with:
+          path: apache-flex-sdk-4.16.1-bin.tar.gz
+          key: https://dlcdn.apache.org/flex/4.16.1/binaries/apache-flex-sdk-4.16.1-bin.tar.gz
+      - if: steps.apache_flex_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: curl https://dlcdn.apache.org/flex/4.16.1/binaries/apache-flex-sdk-4.16.1-bin.tar.gz -O
+
+      - uses: actions/cache@v4
+        id: adobe_airsdk_cache
+        with:
+          path: AdobeAIRSDK.zip
+          key: http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip
+          enableCrossOsArchive: true
+      - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: curl http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip -O
+
+      - uses: actions/cache@v4
+        id: flex_osmf20_cache
+        with:
+          path: OSMF2_0.swc
+          key: https://sourceforge.net/adobe/flexsdk/code/HEAD/tree/trunk/frameworks/libs/OSMF2_0.swc?format=raw
+      - if: steps.flex_osmf20_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: curl https://sourceforge.net/adobe/flexsdk/code/HEAD/tree/trunk/frameworks/libs/OSMF2_0.swc?format=raw -o OSMF2_0.swc
+
+      - name: setup
+        shell: bash
+        run: |
+          tar xzf apache-flex-sdk-4.16.1-bin.tar.gz
+          mv apache-flex-sdk-4.16.1-bin /c/airsdk
+          unzip AdobeAIRSDK.zip -d /c/airsdk
+          cp OSMF2_0.swc /c/airsdk/frameworks/libs/osmf.swc
+
+      - name: download WebViewANE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release download libs --repo NNDD-Rebuild/NNDD --pattern "WebViewANE.ane" --dir libs
+
+      - name: build
+        shell: pwsh
+        run: |
+          Set-Location src
+          & "$env:AIR_HOME\bin\amxmlc.bat" NNDD.mxml `
+            -source-path ..\nicovideo4as\src `
+            -include-libraries ..\libs\flashlsOSMF.swc ..\libs\airhttpd-0.5-mineap-0.1.swc ..\libs\NativeApplicationUpdater-0.5.1.swc ..\libs\FreSharp.swc ..\libs\FreSwift.swc ..\libs\WebViewANE.swc `
+            -warnings=false -output NNDD.swf
+          java -jar "$env:AIR_HOME\lib\adt.jar" -certificate -cn SelfSigned 2048-RSA certificate_no_password.pfx ''
+          java -jar "$env:AIR_HOME\lib\adt.jar" -package -tsa none `
+            -storetype pkcs12 -keystore certificate_no_password.pfx -storepass '' `
+            -target native NNDD.exe NNDD-app.xml NNDD.swf `
+            icon32.png icon128.png icon48.png icon16.png CategoryList.json hlsplayer.html hls.min.js `
+            -extdir ..\libs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: src/NNDD.exe
+
+  build-dmg:
+    runs-on: macos-latest
     env:
       AIR_HOME: /opt/airsdk
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          lfs: true
 
       - uses: actions/cache@v4
         id: apache_flex_cache
@@ -29,11 +102,10 @@ jobs:
       - uses: actions/cache@v4
         id: adobe_airsdk_cache
         with:
-          path: AdobeAIRSDK.zip
-          key: http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip
-          enableCrossOsArchive: true
+          path: AdobeAIRSDK.dmg
+          key: https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg
       - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
-        run: curl http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip -O
+        run: curl https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg -O
 
       - uses: actions/cache@v4
         id: flex_osmf20_cache
@@ -47,84 +119,30 @@ jobs:
         run: |
           tar xzf apache-flex-sdk-4.16.1-bin.tar.gz
           mv apache-flex-sdk-4.16.1-bin $AIR_HOME
-          unzip AdobeAIRSDK.zip -d $AIR_HOME
+          hdiutil mount AdobeAIRSDK.dmg
+          ditto '/Volumes/AIR SDK' $AIR_HOME
           cp OSMF2_0.swc $AIR_HOME/frameworks/libs/osmf.swc
 
       - name: download WebViewANE
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download libs --repo NNDD-Rebuild/NNDD --pattern "WebViewANE.ane" --dir libs
+        run: gh release download libs --repo NNDD-Rebuild/NNDD --pattern "WebViewANE.ane" --dir libs
 
       - name: build
         run: |
           cd src
-          $AIR_HOME/bin/amxmlc NNDD.mxml -compiler.include-libraries ../libs/* -warnings=false
+          $AIR_HOME/bin/amxmlc NNDD.mxml \
+            -source-path ../nicovideo4as/src \
+            -include-libraries ../libs/flashlsOSMF.swc ../libs/airhttpd-0.5-mineap-0.1.swc ../libs/NativeApplicationUpdater-0.5.1.swc ../libs/FreSharp.swc ../libs/FreSwift.swc ../libs/WebViewANE.swc \
+            -warnings=false -output NNDD.swf
           java -jar $AIR_HOME/lib/adt.jar -certificate -cn SelfSigned 2048-RSA certificate_no_password.pfx ''
-          java -jar $AIR_HOME/lib/adt.jar -package -storetype pkcs12 -keystore certificate_no_password.pfx -storepass '' NNDD.air NNDD-app.xml NNDD.swf icon32.png icon128.png icon48.png icon16.png CategoryList.json
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: air
-          path: src/NNDD.air
-
-  build-exe:
-    needs: build-air
-    runs-on: windows-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: air
-
-      - uses: actions/cache@v4
-        id: adobe_airsdk_cache
-        with:
-          path: AdobeAIRSDK.zip
-          key: http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip
-          enableCrossOsArchive: true
-      - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
-        run: curl http://fpdownload.macromedia.com/air/win/download/32.0/AdobeAIRSDK.zip -O
-
-      - name: setup
-        shell: bash
-        run: |
-          unzip AdobeAIRSDK.zip -d air
-
-      - name: build
-        run: |
-          air/bin/adt.bat -package -target native NNDD.exe NNDD.air
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: exe
-          path: NNDD.exe
-
-  build-dmg:
-    needs: build-air
-    runs-on: macos-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: air
-
-      - uses: actions/cache@v4
-        id: adobe_airsdk_cache
-        with:
-          path: AdobeAIRSDK.dmg
-          key: https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg
-      - if: steps.adobe_airsdk_cache.outputs.cache-hit != 'true'
-        run: curl https://airdownload.adobe.com/air/mac/download/32.0/AdobeAIRSDK.dmg -O
-
-      - name: setup
-        run: |
-          hdiutil mount AdobeAIRSDK.dmg
-          ditto '/Volumes/AIR SDK' air
-
-      - name: build
-        run: |
-          air/bin/adt -package -target native NNDD.dmg NNDD.air
+          java -jar $AIR_HOME/lib/adt.jar -package -tsa none \
+            -storetype pkcs12 -keystore certificate_no_password.pfx -storepass '' \
+            -target native NNDD.dmg NNDD-app.xml NNDD.swf \
+            icon32.png icon128.png icon48.png icon16.png CategoryList.json hlsplayer.html hls.min.js \
+            -extdir ../libs
 
       - uses: actions/upload-artifact@v4
         with:
           name: dmg
-          path: NNDD.dmg
+          path: src/NNDD.dmg
