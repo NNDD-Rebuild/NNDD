@@ -276,16 +276,6 @@ private function thumbRelease(event: SliderEvent): void {
 }
 
 private function sliderTimelineChanged(evt: SliderEvent): void {
-    // ffmpeg再生時はプログラムによるvalue代入でもCHANGEが飛ぶため、
-    // CHANGE経由のseekを無視する。ユーザー操作はthumbRelease/mouseWheelで拾う。
-    if (this.playerController.isFfmpegPlaying()) {
-        // トラッククリック (サムドラッグでない) 時のみ即seek。
-        // サムドラッグはthumbReleaseで処理。プログラム代入は押下なしなので無視。
-        if (_sliderPressing && !this.playerController.sliderChanging) {
-            this.playerController.seek(evt.value);
-        }
-        return;
-    }
     if (this.playerController.sliderChanging) {
         this.slider_timeline.value = evt.value;
     } else {

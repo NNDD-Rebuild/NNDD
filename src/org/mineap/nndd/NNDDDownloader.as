@@ -1533,10 +1533,11 @@ package org.mineap.nndd {
 
             LogManager.instance.addLog("DMS: 利用可能なビデオストリーム: " + JSON.stringify(videos));
             var bestVideo: Object = null;
-            // VP9優先 (CEFがVP9 MSEをサポート)、なければH.264
+            // H.264のみ選択。AIR(NetStream/OSMF)はVP9をデコードできず、VP9を選ぶと
+            // ダウンロード済みファイルもストリーミング一時ファイルも音声のみの黒画面になる
             for each (var v: Object in videos) {
                 var vid: String = String(v.id).toLowerCase();
-                if (v.isAvailable && (vid.indexOf("vp9") >= 0 || vid.indexOf("h264") >= 0 || vid.indexOf("avc") >= 0)) {
+                if (v.isAvailable && (vid.indexOf("h264") >= 0 || vid.indexOf("avc") >= 0)) {
                     if (bestVideo == null || int(v.qualityLevel) > int(bestVideo.qualityLevel)) {
                         bestVideo = v;
                     }
@@ -1554,11 +1555,31 @@ package org.mineap.nndd {
             if (bestVideo != null) {
                 LogManager.instance.addLog("DMS: 選択ビデオストリーム: " + String(bestVideo.id));
             }
+            LogManager.instance.addLog("DMS: 利用可能な音声ストリーム: " + JSON.stringify(audios));
+
+            // 選択したビデオの recommendedHighestAudioQualityLevel を超える音声を組み合わせると
+            // access-rights/hls が400を返すため、上限として音声品質を制限する。
+            var maxAudioLevel: int = int.MAX_VALUE;
+            if (bestVideo != null && bestVideo.recommendedHighestAudioQualityLevel != null) {
+                maxAudioLevel = int(bestVideo.recommendedHighestAudioQualityLevel);
+            }
             var bestAudio: Object = null;
             for each (var a: Object in audios) {
-                if (a.isAvailable && (bestAudio == null || int(a.qualityLevel) > int(bestAudio.qualityLevel))) {
+                if (a.isAvailable && int(a.qualityLevel) <= maxAudioLevel
+                    && (bestAudio == null || int(a.qualityLevel) > int(bestAudio.qualityLevel))) {
                     bestAudio = a;
                 }
+            }
+            // 上限内に候補がない場合は制限を無視してフォールバック
+            if (bestAudio == null) {
+                for each (var a2: Object in audios) {
+                    if (a2.isAvailable && (bestAudio == null || int(a2.qualityLevel) > int(bestAudio.qualityLevel))) {
+                        bestAudio = a2;
+                    }
+                }
+            }
+            if (bestAudio != null) {
+                LogManager.instance.addLog("DMS: 選択音声ストリーム: " + String(bestAudio.id));
             }
 
             if (bestVideo == null || bestAudio == null) {

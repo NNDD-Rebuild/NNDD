@@ -124,6 +124,10 @@ Temporary Items
 # Personal scripts / local config (contain local paths)
 ログ.bat
 CLAUDE.md
+1_起動.bat
+
+# システム共有ランタイムでのローカル動作確認用フォルダ (配布版インストールのコピー)
+/src/NNDD_dev/
 
 # Large binaries — SDK / ANE / SWC (place manually)
 containers/builder/*.zip
