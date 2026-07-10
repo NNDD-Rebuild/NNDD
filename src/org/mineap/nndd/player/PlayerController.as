@@ -1,15 +1,8 @@
 package org.mineap.nndd.player {
-    import com.tuarua.WebView;
-    import com.tuarua.webview.Settings;
-
-    import flash.desktop.NativeProcess;
-    import flash.desktop.NativeProcessStartupInfo;
     import flash.display.Loader;
     import flash.display.LoaderInfo;
     import flash.display.MovieClip;
-    import flash.display.NativeWindow;
     import flash.display.NativeWindowType;
-    import flash.events.NativeProcessExitEvent;
     import flash.events.ProgressEvent;
     import flash.display.StageDisplayState;
     import flash.display.StageQuality;
@@ -174,8 +167,6 @@ package org.mineap.nndd.player {
         public var nnddServerPortNum: int = -1;
 
         private var isHLS: Boolean = false;
-        private static var _webView: WebView;
-        private var _nativePlayerProcess: NativeProcess = null;
 
         private var _dmsStreamDownloader: DmsHlsDownloader = null;
         private var _ffmpegSeekBaseSec: Number = 0;
@@ -311,7 +302,6 @@ package org.mineap.nndd.player {
         public function destructor(): void {
 
             isMovieClipStopping = false;
-            stopNativePlayer();
             // _beginFfmpegFilePlayback()がinit()を呼ぶ際、init()内のdestructor()呼び出しで
             // 起動直後のffmpegプロセスを自ら停止してしまわないよう抑制する
             if (!_suppressFfmpegStop) {
@@ -928,159 +918,6 @@ package org.mineap.nndd.player {
             return videoRectangle;
         }
 
-        private function _playWithWebView(dmsUrl: String, comments: Comments, videoTitle: String): void {
-            var uicomp: UIComponent = videoPlayer.vbox_videoPlayer;
-            var topLeft: Point = uicomp.localToGlobal(new Point(0, 0));
-            var rect: Rectangle = new Rectangle(topLeft.x, topLeft.y, uicomp.width, uicomp.height);
-
-            var settings: Settings = new Settings();
-            settings.cef.commandLineArgs.push({key: "disable-web-security", value: "1"});
-            settings.cef.commandLineArgs.push({key: "allow-file-access-from-files", value: "1"});
-            settings.cef.commandLineArgs.push({key: "allow-universal-access-from-files", value: "1"});
-            settings.cef.commandLineArgs.push({key: "enable-features", value: "PlatformHEVCDecoderSupport,MediaFoundationClearVideoDecoder,MediaFoundationH264Encoding,MediaFoundationAsyncVideoDecoder"});
-            settings.cef.commandLineArgs.push({key: "use-media-foundation-for-ovc", value: "all"});
-            settings.cef.commandLineArgs.push({key: "use-angle", value: "d3d11"});
-            settings.cef.remoteDebuggingPort = 9222;
-            settings.useHiDPI = true;
-
-            DmsProxy.instance.start();
-            var proxiedUrl: String = DmsProxy.instance.proxyUrl(dmsUrl);
-
-            var htmlNativePath: String = File.applicationDirectory.resolvePath("hlsplayer.html").nativePath.replace(/\\/g, "/");
-            var htmlUrl: String = "file:///" + encodeURI(htmlNativePath) + "?url=" + encodeURIComponent(proxiedUrl);
-
-            if (_webView == null) {
-                _webView = WebView.shared();
-                _webView.init(videoPlayer.stage, rect, new URLRequest(htmlUrl), settings, 1, 0xFF000000);
-            } else {
-                try {
-                    _webView.viewPort = rect;
-                    _webView.load(new URLRequest(htmlUrl));
-                } catch (e: Error) {
-                    LogManager.instance.addLog("WebView handle invalid, reinitializing: " + e);
-                    _webView = null;
-                    _webView = WebView.shared();
-                    _webView.init(videoPlayer.stage, rect, new URLRequest(htmlUrl), settings, 1, 0xFF000000);
-                }
-            }
-            _webView.visible = true;
-
-            LogManager.instance.addLog("***動画の再生(DMS WebView)***");
-
-            this.isPlayListingPlay = false;
-            this.init(
-                libraryManager.tempDir.url + "/nndd[ThumbInfo].xml",
-                WINDOW_TYPE_FLV,
-                comments,
-                libraryManager.tempDir.url + "/nndd[ThumbInfo].xml",
-                true,
-                false,
-                videoTitle,
-                false,
-                videoTitle
-            );
-        }
-
-        private function _playWithNativeProcess(proxiedUrl: String, videoTitle: String): void {
-            videoPlayer.title = videoTitle != null ? videoTitle : "";
-            videoPlayer.setControllerEnable(false);
-
-            var uicomp: UIComponent = videoPlayer.vbox_videoPlayer;
-            var topLeft: Point = uicomp.localToGlobal(new Point(0, 0));
-            var sw: int = int(uicomp.width);
-            var sh: int = int(uicomp.height);
-
-            // Stage座標 → スクリーン座標 (nativeWindow.bounds + chrome offset)
-            var win: NativeWindow = videoPlayer.nativeWindow;
-            var sideChrome: int = int((win.bounds.width - win.stage.stageWidth) / 2);
-            var topChrome: int = Math.max(0, int(win.bounds.height - win.stage.stageHeight - sideChrome));
-            var px: int = int(win.bounds.x + sideChrome + topLeft.x);
-            var py: int = int(win.bounds.y + topChrome + topLeft.y);
-
-            var whereInfo: NativeProcessStartupInfo = new NativeProcessStartupInfo();
-            whereInfo.executable = new File("C:\\Windows\\System32\\where.exe");
-            whereInfo.arguments = new <String>["ffplay", "mpv"];
-
-            var whereProc: NativeProcess = new NativeProcess();
-            var self: PlayerController = this;
-            var capturedUrl: String = proxiedUrl;
-            var capturedSw: int = sw, capturedSh: int = sh;
-            var capturedPx: int = px, capturedPy: int = py;
-            var whereOutput: String = "";
-
-            whereProc.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, function(e: ProgressEvent): void {
-                try {
-                    whereOutput += whereProc.standardOutput.readUTFBytes(whereProc.standardOutput.bytesAvailable);
-                } catch (err: Error) {}
-            });
-            whereProc.addEventListener(NativeProcessExitEvent.EXIT, function(e: NativeProcessExitEvent): void {
-                var lines: Array = whereOutput.split(/\r?\n/);
-                var playerPath: String = null;
-                for each (var line: String in lines) {
-                    var t: String = line.replace(/^\s+|\s+$/g, "");
-                    if (t.length > 0) { playerPath = t; break; }
-                }
-                if (playerPath == null) {
-                    LogManager.instance.addLog("DMS NativeProcess: ffplay/mpv が PATH に見つかりません");
-                    Alert.show("ffplay.exe または mpv.exe が PATH に見つかりません。\nインストールして PATH を設定してください。", "DMS 再生エラー");
-                    return;
-                }
-                self._launchNativePlayer(playerPath, capturedUrl, capturedSw, capturedSh, capturedPx, capturedPy);
-            });
-            whereProc.start(whereInfo);
-        }
-
-        private function _launchNativePlayer(playerPath: String, url: String, sw: int, sh: int, px: int, py: int): void {
-            stopNativePlayer();
-            var isMpv: Boolean = playerPath.toLowerCase().indexOf("mpv") >= 0;
-            var info: NativeProcessStartupInfo = new NativeProcessStartupInfo();
-
-            if (isMpv) {
-                info.executable = new File(playerPath);
-                info.arguments = new <String>[
-                    "--geometry=" + sw + "x" + sh + "+" + px + "+" + py,
-                    "--no-border",
-                    "--title=NNDD_Player",
-                    "--volume=70",
-                    url
-                ];
-            } else {
-                // ffplay: PowerShell 経由で SDL_VIDEO_WINDOW_POS を設定 (cmd.exe は % を誤解釈するため)
-                info.executable = new File("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-                var esc: Function = function(s: String): String { return s.replace(/'/g, "''"); };
-                var psCmd: String =
-                    "$env:SDL_VIDEO_WINDOW_POS='" + px + "," + py + "'; " +
-                    "& '" + esc(playerPath) + "' " +
-                    "-loglevel error -autoexit " +
-                    "-x " + sw + " -y " + sh + " -noborder -volume 70 " +
-                    "'" + esc(url) + "'";
-                info.arguments = new <String>["-NonInteractive", "-Command", psCmd];
-            }
-
-            _nativePlayerProcess = new NativeProcess();
-            var stderrBuf: String = "";
-            _nativePlayerProcess.addEventListener(ProgressEvent.STANDARD_ERROR_DATA, function(ev: ProgressEvent): void {
-                try {
-                    stderrBuf += _nativePlayerProcess.standardError.readUTFBytes(_nativePlayerProcess.standardError.bytesAvailable);
-                } catch (er: Error) {}
-            });
-            _nativePlayerProcess.addEventListener(NativeProcessExitEvent.EXIT, function(e: NativeProcessExitEvent): void {
-                if (stderrBuf.length > 0) {
-                    LogManager.instance.addLog("DMS NativeProcess stderr:\n" + stderrBuf.substring(0, 1000));
-                }
-                LogManager.instance.addLog("DMS NativeProcess: 終了 exitCode=" + e.exitCode);
-                _nativePlayerProcess = null;
-            });
-            _nativePlayerProcess.start(info);
-            LogManager.instance.addLog("DMS NativeProcess: 起動 " + (isMpv ? "mpv" : "ffplay") + " url=" + url.substring(0, 60));
-        }
-
-        public function stopNativePlayer(): void {
-            if (_nativePlayerProcess != null) {
-                try { _nativePlayerProcess.exit(true); } catch (e: Error) {}
-                _nativePlayerProcess = null;
-            }
-        }
 
         /**
          * DMS(domand)のHLSストリームをDmsHlsDownloaderで一時MP4にダウンロードし、

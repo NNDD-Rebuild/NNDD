@@ -122,12 +122,6 @@
 
 	<supportedProfiles>desktop extendedDesktop</supportedProfiles>
 
-	<extensions>
-		<extensionID>com.tuarua.WebViewANE</extensionID>
-		<extensionID>com.tuarua.FreSharp</extensionID>
-		<extensionID>com.tuarua.FreSwift</extensionID>
-	</extensions>
-
 	<!-- Languages supported by application -->
 	<!-- Only these languages can be specified -->
 	<!-- Android Native uses "in" code for indonesean language, wherein native iOS uses "id" as its language code. -->
