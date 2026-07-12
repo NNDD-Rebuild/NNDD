@@ -2776,8 +2776,8 @@
                 </mx:Canvas>
             </mx:TabNavigator>
 
-            <mx:LinkButton label="https://github.com/nndd-reboot/NNDD" right="10" bottom="10"
-                           toolTip="nndd-reboot/NNDD - 既定のブラウザでGitHubのnndd-reboot/NNDDを開きます。"
+            <mx:LinkButton label="https://github.com/NNDD-Rebuild/NNDD" right="10" bottom="10"
+                           toolTip="NNDD-Rebuild/NNDD - 既定のブラウザでGitHubのNNDD-Rebuild/NNDDを開きます。"
                            click="openProjectPage(event)" color="#0000FF" textDecoration="underline"/>
 
         </mx:Canvas>

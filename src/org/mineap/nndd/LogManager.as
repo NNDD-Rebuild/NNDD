@@ -49,7 +49,7 @@ package org.mineap.nndd {
                              "\n\t最高レベルIDC:" + Capabilities.maxLevelIDC + "\n" + "\n\tNNDD-5chは以下のライブラリを使用しています。" +
                              "\n\t・NativeApplicationUpdater - Apache License 2.0 ( http://code.google.com/p/nativeapplicationupdater/ )" +
                              "\n\t・airhttpd - MIT License ( http://code.google.com/p/airhttpd/ )" +
-                             "\n\t・nicovideo4as - MIT License ( https://github.com/nndd-reboot/nicovideo4as )" +
+                             "\n\t・nicovideo4as - MIT License ( https://github.com/NNDD-Rebuild/nicovideo4as )" +
                              "\n\t・Flashls - Mozilla Public License 2.0 ( http://www.flashls.org/ )" + "\n";
 
             this.logString += "\n" + tempStr;

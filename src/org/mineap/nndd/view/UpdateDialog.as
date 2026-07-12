@@ -14,7 +14,7 @@ private function okButtonClicked(event: MouseEvent): void {
 
 private function goToDownload(): void {
 
-    var urlRequest: URLRequest = new URLRequest("https://github.com/nndd-reboot/NNDD");
+    var urlRequest: URLRequest = new URLRequest("https://github.com/NNDD-Rebuild/NNDD");
     urlRequest.userAgent = "NNDD " + Application.application.version;
 
     navigateToURL(urlRequest);

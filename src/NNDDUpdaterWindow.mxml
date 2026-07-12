@@ -39,7 +39,7 @@
 
             updater.updateVersion = "";
 
-            updater.updateURL = "https://raw.githubusercontent.com/nndd-reboot/NNDD/master/update_v2_native.xml";
+            updater.updateURL = "https://raw.githubusercontent.com/NNDD-Rebuild/NNDD/master/update_v2_native.xml";
             updater.addEventListener(UpdateEvent.INITIALIZED, updaterInitalizedHandler);
             updater.addEventListener(StatusUpdateErrorEvent.UPDATE_ERROR, statusErrorHandler);
             updater.addEventListener(StatusUpdateEvent.UPDATE_STATUS, checkForUpdateEventHandler);
