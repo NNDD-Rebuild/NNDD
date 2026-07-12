@@ -37,7 +37,7 @@
      For iOS Apps, this represents application version number and format should be (<0-999>.<0-999>.<0-999>).
      If this tag is not specified or the value is not according to the format, then this tag will be ignored 
      and <versionNumber> will be used for application version number. Optional. -->
-    <versionLabel>RE-v5.0.0</versionLabel>
+    <versionLabel>RE-v5.0.1</versionLabel>
 
 	<!-- Description, displayed in the AIR application installer.
 	May have multiple values for each language. See samples or xsd schema file. Optional. -->

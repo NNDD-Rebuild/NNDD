@@ -29,7 +29,7 @@ package org.mineap.nndd.ranking {
 
         private static const CATEGORY_LIST_FILE_NAME: String = "CategoryList.json";
 
-        private static const CATEGORY_VERSION: String = "20201009";
+        private static const CATEGORY_VERSION: String = "20210316";
 
         /**
          *
@@ -279,13 +279,11 @@ package org.mineap.nndd.ranking {
                 file.copyTo(File.applicationStorageDirectory.resolvePath(CATEGORY_LIST_FILE_NAME + ".back"), true);
                 file.deleteFile();
                 defCategoryList.copyTo(file, true);
+                categoryList = JSON.parse(fileIO.loadTextSync(file.nativePath));
             }
 
             for each(var category: Object in categoryList.category_list) {
                 catList.push({ title: category.name, suffix: category.id });
-                for each(var tag: Object in category.tags) {
-                    catList.push({ title: "  " + tag, tag: tag, suffix: category.id });
-                }
             }
 
             return catList;

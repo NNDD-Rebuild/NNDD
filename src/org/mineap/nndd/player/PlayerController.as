@@ -506,12 +506,30 @@ package org.mineap.nndd.player {
                 this.videoPlayer.label_playSourceStatus.text = "[Local]";
                 videoInfoView.connectionType = "Local";
                 this.streamingRetryCount = 0;
+
+                var localTitleSource: String;
+                if (downLoadedURL != null && downLoadedURL != "") {
+                    //DMSストリームの一時ファイル再生時等、videoPathがタイトルを表さない場合は
+                    //downLoadedURL(動画ID埋め込み文字列)から「動画id-タイトル」形式を組み立てる
+                    var dlVideoId: String = PathMaker.getVideoID(downLoadedURL);
+                    if (dlVideoId != null) {
+                        var idPos: int = downLoadedURL.indexOf(dlVideoId);
+                        var rawTitlePart: String = (idPos > 0) ? downLoadedURL.substring(0, idPos) : downLoadedURL;
+                        rawTitlePart = rawTitlePart.replace(/[\s\-\[]+$/, "");
+                        localTitleSource = dlVideoId + "-" + rawTitlePart;
+                    } else {
+                        localTitleSource = downLoadedURL;
+                    }
+                } else {
+                    localTitleSource = videoPath.substr(videoPath.lastIndexOf("/") + 1);
+                }
+
                 if (this.videoPlayer.title == null) {
                     this.videoPlayer.addEventListener(FlexEvent.CREATION_COMPLETE, function (): void {
-                        videoPlayer.title = videoPath.substr(videoPath.lastIndexOf("/") + 1);
+                        videoPlayer.title = localTitleSource;
                     });
                 } else {
-                    this.videoPlayer.title = videoPath.substr(videoPath.lastIndexOf("/") + 1);
+                    this.videoPlayer.title = localTitleSource;
                 }
                 var file: File = new File(videoPath);
                 if (!file.exists) {
@@ -646,6 +664,11 @@ package org.mineap.nndd.player {
 
                     if (nnddVideo != null) {
                         videoInfoView.image_thumbImg.source = decodeURIComponent(nnddVideo.thumbUrl);
+                    } else if (downLoadedURL != null && downLoadedURL != "") {
+                        //DMSストリームの一時ファイル再生等、videoPathがライブラリ未登録でも
+                        //downLoadedURLがある場合はストリーミング時と同じサムネイル画像を使う
+                        videoInfoView.image_thumbImg.source =
+                            thumbInfoPath.substring(0, thumbInfoPath.lastIndexOf("/")) + "/nndd[ThumbImg].jpeg";
                     }
                 }
 
@@ -3265,7 +3288,17 @@ package org.mineap.nndd.player {
             isStreaming: Boolean
         ): void {
 
-            var videoID: String = PathMaker.getVideoID(videoPath);
+            //PathMaker.getVideoID()は"sm/nm"等のプレフィックスが無い場合、任意の数字列を
+            //IDとみなすフォールバックがあるため、DMSストリームの一時ファイル名
+            //(dms_stream_<timestamp>.mp4)からタイムスタンプを誤って動画IDと判定してしまう。
+            //既知の動画ID埋め込み文字列(this._videoID)があればそちらを優先して抽出する。
+            var videoID: String = null;
+            if (this._videoID != null && this._videoID != "") {
+                videoID = PathMaker.getVideoID(this._videoID);
+            }
+            if (videoID == null) {
+                videoID = PathMaker.getVideoID(videoPath);
+            }
 
             if (!isStreaming) { //ストリーミング再生では無い場合は、ローカル以外にもニコ動から取得したデータを設定する
 

@@ -3737,10 +3737,14 @@ private function rankingRenewButtonClicked(): void {
                     }
 
                     if (period !== NicoRankingUrl.NEW_ARRIVAL && categoryListProvider.length == 0) {
-                        categoryList = RankingListBuilder.getCategoryList();
-                        categoryListProvider = categoryList.map(function (element: Object, index: int, arr: Array): Object {
-                            return element.title;
-                        });
+                        try {
+                            categoryList = RankingListBuilder.getCategoryList();
+                            categoryListProvider = categoryList.map(function (element: Object, index: int, arr: Array): Object {
+                                return element.title;
+                            });
+                        } catch (categoryError: Error) {
+                            logManager.addLog("カテゴリ一覧の取得に失敗:" + categoryError + "\n" + categoryError.getStackTrace());
+                        }
                     }
 
                     if (categoryListIndex != -1 && categoryList.length >= categoryListIndex) {
