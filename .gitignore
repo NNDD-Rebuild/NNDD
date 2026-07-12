@@ -126,8 +126,14 @@ Temporary Items
 CLAUDE.md
 1_起動.bat
 
+# Claude Code ローカル設定・skill (commitしない)
+/.claude/
+
 # システム共有ランタイムでのローカル動作確認用フォルダ (配布版インストールのコピー)
 /src/NNDD_dev/
+
+# -target bundle のビルド成果物 (ローカル動作確認には使わない、NNDD_dev方式を使う)
+/src/NNDD_bundle/
 
 # Large binaries — SDK / ANE / SWC (place manually)
 containers/builder/*.zip
