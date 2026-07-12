@@ -274,8 +274,13 @@ package org.mineap.nndd.ranking {
             var fileIO: FileIO = new FileIO();
             var categoryList: Object = JSON.parse(fileIO.loadTextSync(file.nativePath));
 
-            if (categoryList.version != null && categoryList.version !== CATEGORY_VERSION) {
-                // カテゴリバージョンが違うならバックアップして強制的に上書き
+            var isVersionMismatch: Boolean = categoryList.version != null && categoryList.version !== CATEGORY_VERSION;
+            var isEmptyCategoryList: Boolean = categoryList.category_list == null || categoryList.category_list.length == 0;
+
+            if (isVersionMismatch || isEmptyCategoryList) {
+                // カテゴリバージョンが違う、またはカテゴリ一覧が空ならバックアップして強制的に上書き
+                // (キャッシュされたユーザー領域のファイルが空リストのまま残っていると、
+                //  アプリ本体を更新してもランキングのカテゴリ選択が復旧しないため)
                 file.copyTo(File.applicationStorageDirectory.resolvePath(CATEGORY_LIST_FILE_NAME + ".back"), true);
                 file.deleteFile();
                 defCategoryList.copyTo(file, true);
