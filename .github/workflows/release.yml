@@ -56,11 +56,12 @@ jobs:
           unzip AdobeAIRSDK.zip -d /c/airsdk
           cp OSMF2_0.swc /c/airsdk/frameworks/libs/osmf.swc
 
-      - name: category list update
-        shell: bash
-        run: |
-          (cd utils/category_list_update && npm ci)
-          utils/category_list_update/node_modules/.bin/ts-node utils/category_list_update/fetch_ranking_genre_tags.ts > src/CategoryList.json
+      # category list update: 無効化 (2026-07-12)
+      # ニコニコ動画の/rankingページが完全SPA化し、fetch_ranking_genre_tags.ts の
+      # cheerioによる静的HTMLスクレイピングではジャンルを1件も取得できず、
+      # 空のcategory_list([])でsrc/CategoryList.jsonを上書きしてしまいランキングが機能しなくなっていた。
+      # コミット済みのsrc/CategoryList.json (2021年時点、ジャンル構成自体は概ね不変) をそのまま使う。
+      # 復活させる場合はfetch_ranking_genre_tags.tsを新しいサイト構造/APIに対応させてから。
 
       - name: build
         env:
