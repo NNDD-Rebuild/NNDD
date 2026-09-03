@@ -1610,7 +1610,8 @@ package org.mineap.nndd {
                 _videoId,
                 _watchVideo.domandAccessRightKey,
                 String(bestVideo.id),
-                String(bestAudio.id)
+                String(bestAudio.id),
+                _watchVideo.watchTrackId
             );
         }
 
