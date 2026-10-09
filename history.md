@@ -14,6 +14,9 @@ Author
 
 History
 -------
+### 2026-10-09 RE-v5.0.2
+* ニコニコ側API仕様変更(DMSセッション作成APIのactionTrackId検証強化)に伴うストリーミング再生失敗を修正
+
 ### 2026-07-12 RE-v5.0.1
 * WebView再生方式とANE依存を完全削除
 * DMS ストリーミング再生修正: DmsHlsDownloader方式へ移行、VP9排除
