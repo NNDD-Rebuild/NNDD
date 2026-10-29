@@ -8,7 +8,6 @@ package org.mineap.nndd {
 
     import org.mineap.nicovideo4as.Login;
     import org.mineap.nicovideo4as.MyListAdder;
-    import org.mineap.nicovideo4as.MyListLoader;
     import org.mineap.nndd.util.PathMaker;
 
     /**
@@ -32,7 +31,6 @@ package org.mineap.nndd {
 
         private var _logManager: LogManager = null;
         private var _login: Login = null;
-        private var _myListLoader: MyListLoader = null;
         private var _myListAdder: MyListAdder = null;
 
         /**
@@ -82,7 +80,6 @@ package org.mineap.nndd {
         public function NNDDMyListAdder(_logManager: LogManager) {
             this._logManager = _logManager;
             this._login = new Login();
-            this._myListLoader = new MyListLoader();
             this._myListAdder = new MyListAdder();
         }
 
@@ -137,57 +134,21 @@ package org.mineap.nndd {
             this._logManager.addLog("\t" + LOGIN_SUCCESS + ":" + _watchUrl);
             dispatchEvent(new Event(LOGIN_SUCCESS));
 
-            //リスナ追加
-            this._myListLoader.addEventListener(MyListLoader.GET_MYLISTGROUP_SUCCESS, getMylistGroupSuccess);
-            this._myListLoader.addEventListener(
-                MyListLoader.GET_MYLISTGROUP_FAILURE,
-                function (event: ErrorEvent): void {
-                    (event.target as URLLoader).close();
-                    _logManager.addLog(GET_MYLISTGROUP_FAIL + ":" + _watchUrl + ":" + event + ":" + event.target + ":" +
-                                       event.text);
-                    trace(GET_MYLISTGROUP_FAIL + ":" + _watchUrl + ":" + event + ":" + event.target + ":" + event.text);
-                    dispatchEvent(new IOErrorEvent(
-                        GET_MYLISTGROUP_FAIL,
-                        false,
-                        false,
-                        event.text
-                    ));
-                    close();
-                }
-            );
-            this._myListLoader.addEventListener(
-                HTTPStatusEvent.HTTP_RESPONSE_STATUS,
-                function (event: HTTPStatusEvent): void {
-                    trace(event);
-                    _logManager.addLog("\t\t" + HTTPStatusEvent.HTTP_RESPONSE_STATUS + ":" + event);
-                }
-            );
-
-            this._logManager.addLog("マイリストグループの取得:" + this._watchUrl);
-            this._myListLoader.getMyListGroup(PathMaker.getVideoID(this._watchUrl));
+            // 新APIでは動画ページからトークン等を取る必要が無いので、そのままマイリストへ追加する
+            addToMyList();
         }
 
         /**
-         * 動画ページへのアクセスが完了したら呼ばれます。
-         * コメントのダウンロードを開始します。
-         *
-         * @param event
+         * マイリストへの追加を開始します。
+         * (nvapi POST /v1/users/me/mylists/{id}/items?itemId=動画ID。user_session でのログインが必要です)
          *
          */
-        private function getMylistGroupSuccess(event: Event): void {
-
-            //動画ページアクセス完了通知(動画ページへのアクセスは閉じない)
-            trace(GET_MYLISTGROUP_SUCCESS + ":" + event);
-            this._logManager.addLog("\t" + GET_MYLISTGROUP_SUCCESS + ":" + _watchUrl);
-            dispatchEvent(new Event(GET_MYLISTGROUP_SUCCESS));
-
+        private function addToMyList(): void {
             //マイリスト登録開始
             this._myListAdder.addEventListener(MyListAdder.FAIL, function (event: ErrorEvent): void {
-
                 _logManager.addLog("\t" + ADD_MYLSIT_FAIL + ":" + _watchUrl + ":" + event + ":" + event.target + ":" +
                                    event.text);
                 trace(ADD_MYLSIT_FAIL + ":" + _watchUrl + ":" + event + ":" + event.target + ":" + event.text);
-
                 dispatchEvent(new ErrorEvent(NNDDMyListAdder.ADD_MYLSIT_FAIL, false, false, event.text));
                 close();
             });
@@ -202,17 +163,14 @@ package org.mineap.nndd {
             this._myListAdder.addEventListener(MyListAdder.DUP_ERROR, myListAddDup);
             this._myListAdder.addEventListener(MyListAdder.NOTEXIST, myListAddNotExist);
 
-            this._logManager.addLog("マイリストへ追加:url=" + this._watchUrl + ", group_id=" + this._group_id);
-
-            var itemType: String = this._myListLoader.getItemType();
-            var itemId: String = this._myListLoader.getItemId();
-            if ((itemType == null || itemId == null) && this._retryEnable) {
+            var videoId: String = PathMaker.getVideoID(this._watchUrl);
+            this._logManager.addLog("マイリストへ追加:url=" + this._watchUrl + ", videoId=" + videoId + ", group_id=" + this._group_id);
+            if (videoId == null) {
+                dispatchEvent(new ErrorEvent(NNDDMyListAdder.ADD_MYLSIT_FAIL, false, false, "動画IDが取得できません"));
                 close();
-                this._logManager.addLog("マイリストへの追加をリトライ(マイリストAPIの応答が正しくない)");
-                this.addMyList(this._watchUrl, this._group_id, this._mailAddr, this._password);
-            } else {
-                this._myListAdder.addMyList(this._myListLoader.getToken(), this._group_id, itemType, itemId);
+                return;
             }
+            this._myListAdder.addMyList(this._group_id, videoId);
         }
 
         /**
@@ -267,11 +225,6 @@ package org.mineap.nndd {
         public function close(): void {
             try {
                 this._login.close();
-            } catch (error: Error) {
-                trace(error.getStackTrace());
-            }
-            try {
-                this._myListLoader.close();
             } catch (error: Error) {
                 trace(error.getStackTrace());
             }

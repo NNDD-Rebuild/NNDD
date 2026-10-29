@@ -1709,7 +1709,7 @@ private function invokeEventHandler(event: InvokeEvent): void {
                     checker.addEventListener(Event.COMPLETE, function (event: Event): void {
                         if (checker.url != null) {
                             logManager.addLog("短縮URLを展開...:" + checker.url);
-                            if (UserManager.instance.user == "" || UserManager.instance.user == null) {
+                            if (!Login.canAuthenticate(UserManager.instance.user, UserManager.instance.password)) {
                                 isArgumentBoot = true;
                                 argumentURL = checker.url;
                             } else {
@@ -2476,8 +2476,9 @@ private function onFirstTimeLoginSuccess(event: HTTPStatusEvent): void {
     PopUpManager.removePopUp(loginDialog);
     this.isLoginDialogOpened = false;
 
-    UserManager.instance.user = loginDialog.textInput_userName.text;
-    UserManager.instance.password = loginDialog.textInput_password.text;
+    // user_session でログインした場合は、メールアドレス・パスワードを使わない(Login が保持中の user_session で認証済みとして扱う)
+    UserManager.instance.user = loginDialog.isSessionLogin ? "" : loginDialog.textInput_userName.text;
+    UserManager.instance.password = loginDialog.isSessionLogin ? "" : loginDialog.textInput_password.text;
 
     MyListRenewScheduler.instance.mailAddress = UserManager.instance.user;
     MyListRenewScheduler.instance.password = UserManager.instance.password;
@@ -2716,7 +2717,7 @@ private function tabChanged(): void {
 
             var confValue: String = ConfigManager.getInstance().getItem("firstTimeMyListShow");
             if (confValue == null) {
-                if (UserManager.instance.user.length > 0 && UserManager.instance.password.length > 0) {
+                if (Login.canAuthenticate(UserManager.instance.user, UserManager.instance.password)) {
                     Alert.show(
                         Message.M_RENEW_MYLIST_GROUP,
                         Message.M_MESSAGE,

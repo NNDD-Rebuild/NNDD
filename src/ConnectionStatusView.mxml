@@ -7,45 +7,27 @@
         import org.mineap.nndd.LogManager;
         import org.mineap.nndd.util.NicoServerStatusCheck;
 
-        private var loginUrl: String = "https://secure.nicovideo.jp/secure/login_form";
-        private var getFlvUrl: String = "http://flapi.nicovideo.jp/api/getflv";
-        private var getBgmUrl: String = "http://flapi.nicovideo.jp/api/getbgm";
+        private var loginUrl: String = "https://account.nicovideo.jp/login";
+        // 動画API: 視聴ページ情報(ゲスト用)。旧 flapi の getflv は廃止された
+        private var getFlvUrl: String = "https://www.nicovideo.jp/api/watch/v3_guest/sm9?actionTrackId=nnddCheck0_1700000000000";
+        // メッセージサーバー: コメントAPI(nvcomment)。旧 msg.nicovideo.jp は廃止された
         private var messageServerUrlArray: Array = new Array(
-                "http://msg.nicovideo.jp/4/api/",
-                "http://msg.nicovideo.jp/13/api/",
-                "http://msg.nicovideo.jp/18/api/",
-                "http://msg.nicovideo.jp/34/api/",
-                "http://msg.nicovideo.jp/38/api/",
-                "http://msg.nicovideo.jp/45/api/"
+                "https://public.nvcomment.nicovideo.jp/"
         );
+        // 動画サーバー: 配信(DMS)のCDN。旧 smile サーバーは廃止された
         private var videoServerUrlArray: Array = new Array(
-                "http://smile-pcm42.nicovideo.jp/smile",
-                "http://smile-pso42.nicovideo.jp/smile",
-                "http://smile-pso00.nicovideo.jp/smile",
-                "http://smile-pso62.nicovideo.jp/smile",
-                "http://smile-pso62.nicovideo.jp/smile",
-                "http://smile-pso22.nicovideo.jp/smile",
-                "http://smile-pso52.nicovideo.jp/smile",
-                "http://smile-pcm51.nicovideo.jp/smile",
-                "http://smile-pcm22.nicovideo.jp/smile",
-                "http://smile-pcm11.nicovideo.jp/smile",
-                "http://smile-pcm52.nicovideo.jp/smile",
-                "http://smile-pcm41.nicovideo.jp/smile",
-                "http://smile-pcm51.nicovideo.jp/smile",
-                "http://smile-pcm32.nicovideo.jp/smile",
-                "http://smile-pcm11.nicovideo.jp/smile"
+                "https://delivery.domand.nicovideo.jp/",
+                "https://asset.domand.nicovideo.jp/"
         );
+        // サムネイル画像サーバー: 旧 tn-skr*.smilevideo.jp は廃止された
         private var thumbImgServerUrlArray: Array = new Array(
-                "http://tn-skr1.smilevideo.jp/smile",
-                "http://tn-skr2.smilevideo.jp/smile",
-                "http://tn-skr3.smilevideo.jp/smile",
-                "http://tn-skr4.smilevideo.jp/smile"
+                "https://nicovideo.cdn.nimg.jp/thumbnails/"
         );
-        private var getThumbInfoUrl: String = "http://ext.nicovideo.jp/api/getthumbinfo";
-        private var rankingUrl: String = "http://www.nicovideo.jp/ranking";
-        private var tagSearchUrl: String = "http://www.nicovideo.jp/tag";
-        private var searchUrl: String = "http://www.nicovideo.jp/search";
-        private var myListUrl: String = "http://www.nicovideo.jp/mylist";
+        private var getThumbInfoUrl: String = "https://ext.nicovideo.jp/api/getthumbinfo";
+        private var rankingUrl: String = "https://www.nicovideo.jp/ranking";
+        private var tagSearchUrl: String = "https://www.nicovideo.jp/tag";
+        private var searchUrl: String = "https://www.nicovideo.jp/search";
+        private var myListUrl: String = "https://nvapi.nicovideo.jp/v1/users/me/mylists";
 
         private var logManager: LogManager;
 
@@ -55,7 +37,6 @@
         private var check_search: NicoServerStatusCheck = null;
         private var check_myList: NicoServerStatusCheck = null;
         private var check_getFlv: NicoServerStatusCheck = null;
-        private var check_getBgm: NicoServerStatusCheck = null;
         private var check_message: NicoServerStatusCheck = null;
         private var check_video: NicoServerStatusCheck = null;
         private var check_thumbImg: NicoServerStatusCheck = null;
@@ -82,9 +63,6 @@
                 return false;
             }
             if (check_getFlv != null) {
-                return false;
-            }
-            if (check_getBgm != null) {
                 return false;
             }
             if (check_message != null) {
@@ -129,9 +107,6 @@
                 if (check_getFlv != null) {
                     check_getFlv.close();
                 }
-                if (check_getBgm != null) {
-                    check_getBgm.close();
-                }
                 if (check_message != null) {
                     check_message.close();
                 }
@@ -151,7 +126,6 @@
                 check_search = null;
                 check_myList = null;
                 check_getFlv = null;
-                check_getBgm = null;
                 check_message = null;
                 check_video = null;
                 check_thumbImg = null;
@@ -236,19 +210,6 @@
                     }
                 });
                 check_getFlv.checkUrl(getFlvUrl, label_getFlv, "getFlv");
-
-                check_getBgm = new NicoServerStatusCheck(logManager);
-                check_getBgm.addEventListener(Event.COMPLETE, function (event: Event): void {
-                    if (check_getBgm != null) {
-                        check_getBgm.close();
-                        check_getBgm = null;
-                    }
-                    if (isFullComplete()) {
-                        button_start.label = "サーバーの状況を診断";
-                    }
-                });
-                check_getBgm.checkUrl(getBgmUrl, label_getBgm, "getBgm");
-
 
                 check_message = new NicoServerStatusCheck(logManager);
                 check_message.addEventListener(Event.COMPLETE, function (event: Event): void {
@@ -337,11 +298,6 @@
         <s:HGroup>
             <mx:Label text="動画API："/>
             <mx:Label text="未実施" id="label_getFlv" fontWeight="normal"/>
-        </s:HGroup>
-
-        <s:HGroup>
-            <mx:Label text="BGMAPI："/>
-            <mx:Label text="未実施" id="label_getBgm" fontWeight="normal"/>
         </s:HGroup>
 
         <s:HGroup>

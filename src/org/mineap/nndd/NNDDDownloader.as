@@ -645,7 +645,7 @@ package org.mineap.nndd {
                 HTTPStatusEvent.HTTP_RESPONSE_STATUS,
                 function (event: HTTPStatusEvent): void {
                     trace(event);
-                    var threadId: String = PathMaker.getVideoID(event.responseURL);
+                    var threadId: String = PathMaker.getVideoID(event.responseURL.split("?")[0]); // actionTrackId 末尾の数字列を動画IDと誤認しないようクエリは除く
                     // リダイレクトされた。
                     if (threadId != _videoId) {
                         LogManager.instance.addLog("リダイレクト: " + _videoId + " -> " + threadId);
@@ -707,6 +707,12 @@ package org.mineap.nndd {
             //動画ページアクセス完了通知(動画ページへのアクセスは閉じない)
             trace(WATCH_SUCCESS + ":" + event);
             LogManager.instance.addLog("\t" + WATCH_SUCCESS + ":" + this._videoId + ":" + this._nicoVideoName);
+            // ログイン状態の確認用(user_session が効いているかは、再生できるかだけでは分からない)
+            var viewer: Object = this._watchVideo.jsonData.viewer;
+            LogManager.instance.addLog("\t視聴情報:endpoint=" + (this._watchVideo.guestFetched ? "v3_guest" : "v3") +
+                                       " dms=" + (this._watchVideo.dmsFromGuest ? "guest" : "main") +
+                                       " viewer=" + (viewer != null ? "あり" : "なし") +
+                                       " isPremium=" + (viewer != null ? viewer.isPremium : "n/a"));
             dispatchEvent(new Event(WATCH_SUCCESS));
 
             //動画ページの閲覧のみ。
@@ -1004,39 +1010,12 @@ package org.mineap.nndd {
         }
 
         /**
-         * waybackkey取得APIにアクセスする.
+         * コメント取得へ進む.
+         * 旧 getwaybackkey API は廃止された。nvcomment では過去ログも waybackkey 不要で、
+         * getNormalComment が additionals.when(this._when)を付けて取得する。
          */
         private function getWaybackkeyAccess(): void {
-            if (this._when == null) {
-                //過去ログは取得しない
-                getNormalComment();
-            } else {
-                //過去ログモード
-                this._getWaybackkeyAccess = new ApiGetWaybackkeyAccess();
-
-                this._getWaybackkeyAccess.addEventListener(Event.COMPLETE, getWaybackkeySuccess);
-                this._getWaybackkeyAccess.addEventListener(IOErrorEvent.IO_ERROR, function (event: IOErrorEvent): void {
-                    (event.target as ApiGetWaybackkeyAccess).close();
-                    LogManager.instance.addLog(GETWAYBACKKEY_API_ACCESS_FAIL + ":" + _videoId + ":" + event + ":" +
-                                               event.target + ":" + event.text);
-                    trace(GETWAYBACKKEY_API_ACCESS_FAIL + ":" + event + ":" + event.target + ":" + event.text);
-                    dispatchEvent(new IOErrorEvent(GETWAYBACKKEY_API_ACCESS_FAIL, false, false, event.text));
-                    close(true, true, event);
-                });
-                this._getWaybackkeyAccess.addEventListener(
-                    HTTPStatusEvent.HTTP_RESPONSE_STATUS,
-                    function (event: HTTPStatusEvent): void {
-                        trace(event);
-                        LogManager.instance.addLog("\t\t" + HTTPStatusEvent.HTTP_RESPONSE_STATUS + ":" + event);
-                    }
-                );
-
-                trace(GETWAYBACKKEY_API_ACCESS_START + ":" + this._videoId);
-                LogManager.instance.addLog(GETWAYBACKKEY_API_ACCESS_START + ":" + this._videoId);
-                dispatchEvent(new Event(GETWAYBACKKEY_API_ACCESS_START));
-
-                this._getWaybackkeyAccess.getAPIResult(this._threadId);
-            }
+            getNormalComment();
         }
 
         /**
@@ -1108,7 +1087,8 @@ package org.mineap.nndd {
                 nvParams ? nvParams.targets : [],
                 nvParams ? nvParams.language : "ja-jp",
                 this._watchVideo.userKey,
-                this._watchVideo.nvCommentServerUrl
+                this._watchVideo.nvCommentServerUrl,
+                this._when
             );
         }
 

@@ -1,4 +1,5 @@
 package org.mineap.nndd.player {
+    import org.mineap.nicovideo4as.Login;
     import flash.events.ErrorEvent;
     import flash.events.Event;
     import flash.events.TimerEvent;
@@ -78,7 +79,7 @@ package org.mineap.nndd.player {
                 FlexGlobals.topLevelApplication.activate();
                 return;
             }
-            if (mailAddress == null || mailAddress == "" || password == null || password == "") {
+            if (!Login.canAuthenticate(mailAddress, password)) {
                 Alert.show("ニコニコ動画にログインできません。ユーザー名とパスワードを設定してください。");
                 _logger.addLog("***マイリストへの追加失敗***");
                 FlexGlobals.topLevelApplication.activate();

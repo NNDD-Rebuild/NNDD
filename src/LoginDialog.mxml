@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <mx:TitleWindow xmlns:mx="http://www.adobe.com/2006/mxml"
                 xmlns:s="library://ns.adobe.com/flex/spark"
-                width="350" height="244" horizontalScrollPolicy="off" layout="absolute"
+                width="470" height="540" horizontalScrollPolicy="off" layout="absolute"
                 title="ニコニコ動画へログイン" verticalScrollPolicy="off">
     <mx:Metadata>
         [Event("onFirstTimeLoginSuccess")]
@@ -27,6 +27,41 @@
 
         protected function textInput_password_changeHandler(event: Event): void {
             password = (event.currentTarget as TextInput).text;
+        }
+
+        protected function textInput_session_changeHandler(event: Event): void {
+            userSession = (event.currentTarget as TextInput).text;
+        }
+
+        protected function textInput_session_creationCompleteHandler(event: FlexEvent): void {
+            try {
+                var storedValue: ByteArray = EncryptedLocalStore.getItem("userSession");
+                if (storedValue != null) {
+                    var session: String = storedValue.readUTFBytes(storedValue.length);
+                    if (session != null && session.length > 0) {
+                        this.userSession = session;
+                        (event.currentTarget as TextInput).text = session;
+                    }
+                }
+            } catch (error: Error) {
+                trace(error.getStackTrace());
+                logManager.addLog("user_sessionの読み込みに失敗:" + error);
+            }
+        }
+
+        protected function checkBox_storeSession_creationCompleteHandler(event: FlexEvent): void {
+            if (!EncryptedLocalStore.isSupported) {
+                (event.currentTarget as CheckBox).enabled = false;
+                (event.currentTarget as CheckBox).selected = false;
+                (event.currentTarget as CheckBox).toolTip = "この環境では user_session を保存できません。";
+                this.isStoreSession = false;
+                return;
+            }
+
+            // 未設定のときは保存する(毎回貼り付ける手間を避ける)
+            var storeSessionStr: String = ConfigManager.getInstance().getItem("storeSession");
+            this.isStoreSession = storeSessionStr == null ? true : ConfUtil.parseBoolean(storeSessionStr);
+            (event.currentTarget as CheckBox).selected = this.isStoreSession;
         }
 
         protected function textInput_otp_changeHandler(event: Event): void {
@@ -177,10 +212,12 @@
     <mx:Script source="org/mineap/nndd/view/LoginDialog.as"/>
 
     <s:VGroup left="5" right="5" top="5" bottom="5">
+        <!-- メールアドレス・パスワードでのログインは廃止されたため非表示。コードから参照されるので部品は残している -->
         <mx:Label left="2" right="2" top="4" width="100%" fontWeight="bold"
-                  text="メールアドレスとパスワードを入力してログインしてください。" textAlign="left"/>
+                  text="メールアドレスとパスワードを入力してログインしてください。" textAlign="left"
+                  visible="false" includeInLayout="false"/>
 
-        <s:VGroup width="90%" horizontalAlign="right">
+        <s:VGroup width="90%" horizontalAlign="right" visible="false" includeInLayout="false">
 
             <s:HGroup right="10" top="32" horizontalAlign="center">
                 <mx:Label text="メールアドレス"/>
@@ -211,16 +248,54 @@
         </s:VGroup>
 
         <mx:CheckBox label="メールアドレスを記憶する" id="checkBox_storeUserName"
-                     creationComplete="checkBox_storeUserName_creationCompleteHandler(event)"/>
+                     creationComplete="checkBox_storeUserName_creationCompleteHandler(event)"
+                     visible="false" includeInLayout="false"/>
         <mx:CheckBox label="パスワードを保存する" id="checkBox_storePassword"
-                     creationComplete="checkBox_storePassword_creationCompleteHandler(event)"/>
+                     creationComplete="checkBox_storePassword_creationCompleteHandler(event)"
+                     visible="false" includeInLayout="false"/>
         <mx:CheckBox label="次回以降自動的にログインする" id="checkbox_autoLogin"
                      creationComplete="checkbox_autoLogin_creationCompleteHandler(event)"/>
+
+        <mx:HRule width="100%"/>
+
+        <mx:Label left="2" right="2" width="100%" fontWeight="bold"
+                  text="ブラウザでログイン済みの場合 (user_session)" textAlign="left"/>
+        <mx:Text width="100%" selectable="false"
+                 text="ニコニコ動画の仕様変更により、メールアドレスとパスワードでのログインはできなくなりました。ブラウザでニコニコ動画にログインし、Cookie「user_session」の値をここに貼り付けてください。&#13;取得方法: ブラウザで F12 → (Chrome/Edge)「Application」/(Firefox)「ストレージ」→ Cookie → https://www.nicovideo.jp → user_session の値をコピー"/>
+        <s:HGroup width="100%" verticalAlign="middle">
+            <mx:Label text="user_session"/>
+            <mx:TextInput id="textInput_session" width="100%"
+                          creationComplete="textInput_session_creationCompleteHandler(event)"
+                          change="textInput_session_changeHandler(event)"
+                          enter="sessionEnterHandler(event)"/>
+        </s:HGroup>
+        <mx:CheckBox label="user_session を保存する" id="checkBox_storeSession"
+                     creationComplete="checkBox_storeSession_creationCompleteHandler(event)"/>
+        <s:HGroup width="100%" horizontalAlign="right">
+            <mx:Button label="user_session でログイン" click="loginWithSession()" id="sessionLoginButton"/>
+        </s:HGroup>
+
+        <mx:HRule width="100%"/>
+
+        <mx:Label left="2" right="2" width="100%" fontWeight="bold" text="ブラウザから取得" textAlign="left"/>
+        <mx:Text id="text_extensionHint" width="100%" selectable="false"
+                 text="Chrome は下のボタンで開くと自動で送られます。手動で送る場合は、拡張機能のポップアップに次のコードを入力してください。"/>
+        <s:HGroup width="100%" verticalAlign="middle">
+            <mx:Label text="コード"/>
+            <mx:Label id="label_pairingCode" fontWeight="bold" fontSize="16" text="------"/>
+        </s:HGroup>
+        <s:HGroup width="100%" horizontalAlign="right">
+            <mx:Button label="Chrome を開く(拡張から送る)" click="openChromeForExtension()" id="chromeButton"
+                       toolTip="Chrome でニコニコ動画を開きます。Chrome の Cookie は暗号化されているため、拡張機能から送ります。"/>
+            <mx:Button label="Firefox から取得" click="loadFromFirefox()" id="firefoxButton"
+                       toolTip="Firefox のプロファイルから user_session を読み取ります。"/>
+        </s:HGroup>
 
         <s:HGroup right="10" bottom="10" width="100%" horizontalAlign="right" verticalAlign="bottom">
             <mx:Button label="今はログインしない" click="notLogin()" id="noLoginButton" keyUp="buttonKeyUp(event)"/>
             <mx:Button label="ログイン" click="login()" id="loginButton" keyUp="buttonKeyUp(event)"
-                       creationComplete="loginButton_creationCompleteHandler(event)"/>
+                       creationComplete="loginButton_creationCompleteHandler(event)"
+                       visible="false" includeInLayout="false"/>
         </s:HGroup>
 
     </s:VGroup>

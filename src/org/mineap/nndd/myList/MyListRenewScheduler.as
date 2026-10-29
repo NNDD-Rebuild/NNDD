@@ -1,4 +1,5 @@
 package org.mineap.nndd.myList {
+    import org.mineap.nicovideo4as.Login;
     import flash.events.ErrorEvent;
     import flash.events.Event;
     import flash.events.EventDispatcher;
@@ -348,8 +349,7 @@ package org.mineap.nndd.myList {
          */
         private function myListRenew(myList: MyList, enableNext: Boolean = true): void {
 
-            if (this._mailAddress != null && this._mailAddress != "" && this._password != null && this._password !=
-                "") {
+            if (Login.canAuthenticate(this._mailAddress, this._password)) {
 
                 var nnddMyListLoader: NNDDMyListLoader = new NNDDMyListLoader();
 

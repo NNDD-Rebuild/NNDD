@@ -1,4 +1,5 @@
 package org.mineap.nndd.download {
+    import org.mineap.nicovideo4as.Login;
     import flash.errors.IOError;
     import flash.events.Event;
     import flash.events.EventDispatcher;
@@ -197,7 +198,7 @@ package org.mineap.nndd.download {
         public function next(ignoreSkipFlag: Boolean): void {
             isCancel = false;
 
-            if (mailaddress != "" && password != "") {
+            if ((mailaddress != "" && password != "") || Login.manualUserSession != null) {
                 if (isDownloading == false) {
 
                     if (ignoreSkipFlag) {
@@ -309,7 +310,7 @@ package org.mineap.nndd.download {
          */
         private function download(id: String): void {
 
-            if (mailaddress != "" && password != "") {
+            if ((mailaddress != "" && password != "") || Login.manualUserSession != null) {
 
                 var index: int = searchQueueIndexByQueueId(id);
 

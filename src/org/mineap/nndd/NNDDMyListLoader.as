@@ -412,6 +412,7 @@ package org.mineap.nndd {
          */
         private function jsonMyListToXml(json: String): XML {
             var data: Object = JSON.parse(json);
+            // マイリストは data.mylist.items[].video、ユーザー投稿動画(v3)は data.items[].essential
             var mylistData: Object = data.data.mylist;
             var name: String = mylistData != null && mylistData.name != null ? String(mylistData.name) : "";
             var rawItems: Array = (mylistData != null && mylistData.items != null)
@@ -424,11 +425,12 @@ package org.mineap.nndd {
             chTitle.appendChild(name);
             channel.appendChild(chTitle);
             var chLink: XML = <link/>;
-            chLink.appendChild("https://www.nicovideo.jp/mylist/" + this._myListId);
+            chLink.appendChild(this._myListId != null ? "https://www.nicovideo.jp/mylist/" + this._myListId :
+                               "https://www.nicovideo.jp/user/" + this._uploadUserId + "/video");
             channel.appendChild(chLink);
 
             for each (var item: Object in rawItems) {
-                var video: Object = item.video;
+                var video: Object = item.video != null ? item.video : item.essential;
                 if (video == null) continue;
 
                 var videoId: String = video.id != null ? String(video.id) : "";
@@ -498,7 +500,8 @@ package org.mineap.nndd {
             try {
                 var rawData: String = String((event.target as URLLoader).data);
                 var xml: XML;
-                if (this._myListId != null) {
+                if (this._myListId != null || this._uploadUserId != null) {
+                    // マイリスト(v1/v2)とユーザー投稿動画(v3)は JSON で返る。RSS(XML)形式に変換して以降の処理に渡す
                     var trimmed: String = rawData.replace(/^\s+/, "");
                     if (trimmed.length > 0 && trimmed.charAt(0) == '{') {
                         xml = jsonMyListToXml(rawData);

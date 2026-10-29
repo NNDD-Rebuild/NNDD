@@ -1,4 +1,5 @@
 package org.mineap.nndd.player {
+    import org.mineap.nicovideo4as.Login;
     import flash.display.Loader;
     import flash.display.LoaderInfo;
     import flash.display.MovieClip;
@@ -552,8 +553,7 @@ package org.mineap.nndd.player {
                 }
 
                 if (this._videoID != null && PathMaker.getVideoID(videoPath) == LibraryUtil.getVideoKey(videoPath)) {
-                    if ((UserManager.instance.user == null || UserManager.instance.password == null) ||
-                        (UserManager.instance.user == "" || UserManager.instance.password == "")) {
+                    if (!Login.canAuthenticate(UserManager.instance.user, UserManager.instance.password)) {
                         /* ログインしていないとき*/
                         logManager.addLog(Message.FAIL_PLAY_EACH_COMMENT_DOWNLOAD + "(ログインしていません)");
                     }
@@ -590,8 +590,7 @@ package org.mineap.nndd.player {
 
                 if (this._videoID != null && this._videoID != "") {
 
-                    if (UserManager.instance.user != null && UserManager.instance.user != "" &&
-                        UserManager.instance.password != null && UserManager.instance.password != "") {
+                    if (Login.canAuthenticate(UserManager.instance.user, UserManager.instance.password)) {
 
                         myListGroupUpdate(PathMaker.getVideoID(this._videoID));
 
