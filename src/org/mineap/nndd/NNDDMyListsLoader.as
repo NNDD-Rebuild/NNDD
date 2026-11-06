@@ -86,6 +86,9 @@ package org.mineap.nndd {
                         case RssType.USER_UPLOAD_VIDEO:
                             myListUrl = "user/" + myListId;
                             break;
+                        case RssType.SERIES:
+                            myListUrl = "series/" + myListId;
+                            break;
                         default:
                             myListUrl = "myList/" + myListId;
                     }

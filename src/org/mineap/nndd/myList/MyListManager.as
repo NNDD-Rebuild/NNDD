@@ -484,6 +484,10 @@ package org.mineap.nndd.myList {
                         (url != null && MyListUtil.getUserUploadVideoListId(url) != null)) {
                         myList.type = RssType.USER_UPLOAD_VIDEO;
                     }
+                    if ((temp.@type != null && temp.@type == RssType.SERIES.toString()) ||
+                        (url != null && MyListUtil.getSeriesId(url) != null)) {
+                        myList.type = RssType.SERIES;
+                    }
 
                     myListArray.push(file);
                     myListMap[name] = myList;
@@ -540,6 +544,9 @@ package org.mineap.nndd.myList {
                     break;
                 case RssType.USER_UPLOAD_VIDEO:
                     myListId = "user/" + myListId;
+                    break;
+                case RssType.SERIES:
+                    myListId = "series/" + myListId;
                     break;
                 case RssType.MY_LIST:
                     myListId = "myList/" + myListId;
@@ -856,6 +863,10 @@ package org.mineap.nndd.myList {
                         _logManager.addLog("投稿動画一覧(" + myListId + ")を保存中...");
                         file = new File(file.url + "/user/" + myListId + ".xml");
                         break;
+                    case RssType.SERIES:
+                        _logManager.addLog("シリーズ(" + myListId + ")を保存中...");
+                        file = new File(file.url + "/series/" + myListId + ".xml");
+                        break;
                     default:
                         _logManager.addLog("マイリスト(" + myListId + ")を保存中...");
                         file = new File(file.url + "/myList/" + myListId + ".xml");
@@ -982,6 +993,9 @@ package org.mineap.nndd.myList {
                         break;
                     case RssType.USER_UPLOAD_VIDEO:
                         file = new File(file.url + "/user/" + myListId + ".xml");
+                        break;
+                    case RssType.SERIES:
+                        file = new File(file.url + "/series/" + myListId + ".xml");
                         break;
                 }
 
@@ -1320,6 +1334,9 @@ package org.mineap.nndd.myList {
                     case RssType.USER_UPLOAD_VIDEO:
                         myListId = MyListUtil.getUserUploadVideoListId(myList.myListUrl);
                         break;
+                    case RssType.SERIES:
+                        myListId = MyListUtil.getSeriesId(myList.myListUrl);
+                        break;
                     default:
                         myListId = MyListUtil.getMyListId(myList.myListUrl);
                 }
@@ -1455,7 +1472,10 @@ package org.mineap.nndd.myList {
          */
         public static function checkType(url: String): RssType {
             if (url != null) {
-                if (MyListUtil.getChannelId(url) != null) {
+                if (MyListUtil.getSeriesId(url) != null) {
+                    return RssType.SERIES;
+                }
+                else if (MyListUtil.getChannelId(url) != null) {
                     return RssType.CHANNEL;
                 }
                 else if (MyListUtil.getCommunityId(url) != null) {

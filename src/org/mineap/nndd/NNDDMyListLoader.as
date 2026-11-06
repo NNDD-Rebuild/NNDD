@@ -13,6 +13,7 @@ package org.mineap.nndd {
     import org.mineap.nicovideo4as.loader.ChannelLoader;
     import org.mineap.nicovideo4as.loader.CommunityLoader;
     import org.mineap.nicovideo4as.loader.PublicMyListLoader;
+    import org.mineap.nicovideo4as.loader.SeriesLoader;
     import org.mineap.nicovideo4as.loader.UserVideoListLoader;
     import org.mineap.nndd.library.ILibraryManager;
     import org.mineap.nndd.library.LibraryManagerBuilder;
@@ -44,6 +45,7 @@ package org.mineap.nndd {
         private var _communityLoader: CommunityLoader;
         private var _publicMyListLoader: PublicMyListLoader;
         private var _userVideoListLoader: UserVideoListLoader;
+        private var _seriesLoader: SeriesLoader;
         private var _currentPage: int;
         private var _retryCount: int;
 
@@ -57,6 +59,8 @@ package org.mineap.nndd {
         private var _channelId: String;
         private var _communityId: String;
         private var _uploadUserId: String;
+        private var _seriesId: String;
+        private var _channelTotal: int = 0;
 
         public var enableNNDDServer: Boolean = false;
         public var nnddServerAddress: String = null;
@@ -187,6 +191,21 @@ package org.mineap.nndd {
          *
          * @param user
          * @param password
+         * @param seriesId
+         *
+         */
+        public function requestDownloadForSeries(user: String, password: String, seriesId: String): void {
+            trace("start - requestDownload(" + user + ", ****, series/" + seriesId + ")");
+            this._seriesId = seriesId;
+            this._currentPage = 1;
+            this._retryCount = 0;
+            login(user, password);
+        }
+
+        /**
+         *
+         * @param user
+         * @param password
          *
          */
         private function login(user: String, password: String): void {
@@ -237,6 +256,9 @@ package org.mineap.nndd {
                 } else if (this._uploadUserId != null) {
                     id = this._uploadUserId;
                     type = RssType.USER_UPLOAD_VIDEO;
+                } else if (this._seriesId != null) {
+                    id = this._seriesId;
+                    type = RssType.SERIES;
                 }
 
                 _nnddServerUrlLoader = new URLLoader();
@@ -365,6 +387,13 @@ package org.mineap.nndd {
                 this._userVideoListLoader.addEventListener(SecurityErrorEvent.SECURITY_ERROR, xmlLoadIOErrorHandler);
 
                 this._userVideoListLoader.getVideoList(this._uploadUserId, this._currentPage);
+            } else if (this._seriesId != null) {
+                this._seriesLoader = new SeriesLoader();
+                this._seriesLoader.addEventListener(Event.COMPLETE, getXMLSuccess);
+                this._seriesLoader.addEventListener(IOErrorEvent.IO_ERROR, xmlLoadIOErrorHandler);
+                this._seriesLoader.addEventListener(SecurityErrorEvent.SECURITY_ERROR, xmlLoadIOErrorHandler);
+
+                this._seriesLoader.getSeries(this._seriesId, this._currentPage);
             }
         }
 
@@ -383,6 +412,8 @@ package org.mineap.nndd {
                 targetId = "channel/" + this._channelId + "/" + this._currentPage;
             } else if (this._communityId != null) {
                 targetId = "community/" + this._communityId + "/" + this._currentPage;
+            } else if (this._seriesId != null) {
+                targetId = "series/" + this._seriesId + "/" + this._currentPage;
             } else {
                 targetId = "user/" + this._uploadUserId + "/video/" + this._currentPage;
             }
@@ -415,6 +446,10 @@ package org.mineap.nndd {
             // マイリストは data.mylist.items[].video、ユーザー投稿動画(v3)は data.items[].essential
             var mylistData: Object = data.data.mylist;
             var name: String = mylistData != null && mylistData.name != null ? String(mylistData.name) : "";
+            // シリーズは data.detail.title、items[].video
+            if (this._seriesId != null && data.data.detail != null && data.data.detail.title != null) {
+                name = String(data.data.detail.title);
+            }
             var rawItems: Array = (mylistData != null && mylistData.items != null)
                 ? mylistData.items as Array
                 : (data.data != null && data.data.items != null ? data.data.items as Array : []);
@@ -425,8 +460,13 @@ package org.mineap.nndd {
             chTitle.appendChild(name);
             channel.appendChild(chTitle);
             var chLink: XML = <link/>;
-            chLink.appendChild(this._myListId != null ? "https://www.nicovideo.jp/mylist/" + this._myListId :
-                               "https://www.nicovideo.jp/user/" + this._uploadUserId + "/video");
+            if (this._myListId != null) {
+                chLink.appendChild("https://www.nicovideo.jp/mylist/" + this._myListId);
+            } else if (this._seriesId != null) {
+                chLink.appendChild("https://www.nicovideo.jp/series/" + this._seriesId);
+            } else {
+                chLink.appendChild("https://www.nicovideo.jp/user/" + this._uploadUserId + "/video");
+            }
             channel.appendChild(chLink);
 
             for each (var item: Object in rawItems) {
@@ -494,14 +534,98 @@ package org.mineap.nndd {
             return rss;
         }
 
+        private function decodeHtmlEntities(text: String): String {
+            return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#0?39;/g, "'")
+                       .replace(/&amp;/g, "&");
+        }
+
+        /**
+         * チャンネル動画一覧ページ(HTML)をRSS XML形式に変換します。
+         * NNDD-RE の ChannelClient と同じく HTML をスクレイピングします。
+         */
+        private function channelHtmlToXml(html: String): XML {
+            var siteName: Array = html.match(/<meta property="og:site_name" content="([^"]*)"/);
+            var name: String = siteName != null ? decodeHtmlEntities(String(siteName[1])) : "";
+
+            var totalMatch: Array = html.match(/<var>([\d,]+)<\/var>\s*件/);
+            if (totalMatch != null) {
+                this._channelTotal = int(String(totalMatch[1]).replace(/,/g, ""));
+            }
+
+            var rss: XML = <rss version="2.0"/>;
+            var channel: XML = <channel/>;
+            var chTitle: XML = <title/>;
+            chTitle.appendChild(name);
+            channel.appendChild(chTitle);
+            var chLink: XML = <link/>;
+            chLink.appendChild("https://ch.nicovideo.jp/" + this._channelId);
+            channel.appendChild(chLink);
+
+            var entryRegex: RegExp = /<a[^>]+class="[^"]*watchLink[^"]*"[^>]+href="https:\/\/www\.nicovideo\.jp\/watch\/([a-z]{2}\d+)"[^>]*>([\s\S]*?)<\/a>/g;
+            var m: Object;
+            while ((m = entryRegex.exec(html)) != null) {
+                var videoId: String = String(m[1]);
+                var block: String = String(m[2]);
+
+                var titleMatch: Array = block.match(/<h3[^>]*>([\s\S]*?)<\/h3>/);
+                var title: String = titleMatch != null ?
+                                    decodeHtmlEntities(String(titleMatch[1]).replace(/<[^>]+>/g, "").replace(/^\s+|\s+$/g, "")) :
+                                    videoId;
+                var thumbMatch: Array = block.match(/<img[^>]+src="([^"]+)"/);
+                var thumbUrl: String = thumbMatch != null ? String(thumbMatch[1]) : "";
+                var lengthMatch: Array = block.match(/data-style="videoLength"[^>]*>\s*([\d:]+)\s*</);
+                var lengthStr: String = lengthMatch != null ? String(lengthMatch[1]) : "";
+                var memoMatch: Array = block.match(/<p>([\s\S]*?)<\/p>/);
+                var memo: String = memoMatch != null ?
+                                   decodeHtmlEntities(String(memoMatch[1]).replace(/<[^>]+>/g, "").replace(/^\s+|\s+$/g, "")) : "";
+                var dateMatch: Array = block.match(/(\d{4})\/(\d{2})\/(\d{2})[^\d]*(\d{2}):(\d{2})/);
+                var dateStr: String = dateMatch != null ?
+                                      dateMatch[1] + "年" + dateMatch[2] + "月" + dateMatch[3] + "日 " + dateMatch[4] + "：" + dateMatch[5] + "：00" :
+                                      "";
+                var watchUrl: String = "https://www.nicovideo.jp/watch/" + videoId;
+
+                var cdataContent: String = "";
+                if (memo.length > 0) {
+                    cdataContent += '<p class="nico-memo">' + memo.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</p>';
+                }
+                if (thumbUrl.length > 0) {
+                    cdataContent += '<p class="nico-thumbnail"><img src="' + thumbUrl + '" /></p>';
+                }
+                cdataContent += '<p class="nico-info"><small>' +
+                    '<strong class="nico-info-length">' + lengthStr + '</strong>｜' +
+                    '<strong class="nico-info-date">' + dateStr + '</strong> 投稿</small></p>';
+
+                var itemXml: XML = <item/>;
+                var itemTitle: XML = <title/>;
+                itemTitle.appendChild(title);
+                itemXml.appendChild(itemTitle);
+                var itemLink: XML = <link/>;
+                itemLink.appendChild(watchUrl);
+                itemXml.appendChild(itemLink);
+                var itemGuid: XML = <guid/>;
+                itemGuid.@isPermaLink = "true";
+                itemGuid.appendChild(watchUrl);
+                itemXml.appendChild(itemGuid);
+                itemXml.appendChild(new XML("<description><![CDATA[" + cdataContent + "]]></description>"));
+
+                channel.appendChild(itemXml);
+            }
+
+            rss.appendChild(channel);
+            return rss;
+        }
+
         private function getXMLSuccess(event: Event): void {
 //			trace((event.target as URLLoader).data);
 
             try {
                 var rawData: String = String((event.target as URLLoader).data);
                 var xml: XML;
-                if (this._myListId != null || this._uploadUserId != null) {
-                    // マイリスト(v1/v2)とユーザー投稿動画(v3)は JSON で返る。RSS(XML)形式に変換して以降の処理に渡す
+                if (this._channelId != null) {
+                    // チャンネルは動画一覧ページ(HTML)で返る。RSS(XML)形式に変換して以降の処理に渡す
+                    xml = channelHtmlToXml(rawData);
+                } else if (this._myListId != null || this._uploadUserId != null || this._seriesId != null) {
+                    // マイリスト(v1/v2)・ユーザー投稿動画(v3)・シリーズ(v2)は JSON で返る。RSS(XML)形式に変換して以降の処理に渡す
                     var trimmed: String = rawData.replace(/^\s+/, "");
                     if (trimmed.length > 0 && trimmed.charAt(0) == '{') {
                         xml = jsonMyListToXml(rawData);
@@ -523,6 +647,12 @@ package org.mineap.nndd {
                     }
                 }
 
+                // チャンネルは総件数が分かるので、全件取得したらそこで終了する(範囲外ページの取得を避ける)
+                if (this._channelId != null && this._channelTotal > 0 &&
+                    this._xml.child("channel")[0].child("item").length() >= this._channelTotal) {
+                    next = false;
+                }
+
                 // default wait par page is set by 100ms.
                 var wait: int = 100;
                 if (next && this._currentPage > 0) {
@@ -535,6 +665,9 @@ package org.mineap.nndd {
                     } else if (this._channelId != null) {
                         LogManager.instance.addLog(DOWNLOAD_PROCESS_INPROGRESS + ": channel/" + this._uploadUserId +
                                                    "/" + this._currentPage);
+                    } else if (this._seriesId != null) {
+                        LogManager.instance.addLog(DOWNLOAD_PROCESS_INPROGRESS + ": series/" + this._seriesId + "/" +
+                                                   this._currentPage);
                     } else if (this._uploadUserId != null) {
                         LogManager.instance.addLog(DOWNLOAD_PROCESS_INPROGRESS + ": user/" + this._uploadUserId + "/" +
                                                    this._currentPage);
@@ -553,6 +686,8 @@ package org.mineap.nndd {
                     LogManager.instance.addLog(DOWNLOAD_PROCESS_COMPLETE + ": channel/" + this._channelId);
                 } else if (this._communityId != null) {
                     LogManager.instance.addLog(DOWNLOAD_PROCESS_COMPLETE + ": community/" + this._communityId);
+                } else if (this._seriesId != null) {
+                    LogManager.instance.addLog(DOWNLOAD_PROCESS_COMPLETE + ": series/" + this._seriesId);
                 } else {
                     LogManager.instance.addLog(DOWNLOAD_PROCESS_COMPLETE + ": user/" + this._uploadUserId);
                 }
@@ -568,6 +703,9 @@ package org.mineap.nndd {
                 } else if (this._communityId != null) {
                     trace(DOWNLOAD_PROCESS_ERROR + ": community/" + this._communityId);
                     LogManager.instance.addLog(DOWNLOAD_PROCESS_ERROR + ": community/" + this._communityId);
+                } else if (this._seriesId != null) {
+                    trace(DOWNLOAD_PROCESS_ERROR + ": series/" + this._seriesId);
+                    LogManager.instance.addLog(DOWNLOAD_PROCESS_ERROR + ": series/" + this._seriesId);
                 } else {
                     trace(DOWNLOAD_PROCESS_ERROR + ": user/" + this._uploadUserId);
                     LogManager.instance.addLog(DOWNLOAD_PROCESS_ERROR + ": user/" + this._uploadUserId);
@@ -593,10 +731,12 @@ package org.mineap.nndd {
             this._myListId = null;
             this._communityId = null;
             this._uploadUserId = null;
+            this._seriesId = null;
             this._login = null;
             this._publicMyListLoader = null;
             this._channelLoader = null;
             this._userVideoListLoader = null;
+            this._seriesLoader = null;
         }
 
         /**
@@ -629,6 +769,12 @@ package org.mineap.nndd {
             try {
                 this._userVideoListLoader.close();
                 trace(this._userVideoListLoader + " is closed.");
+            } catch (error: Error) {
+            }
+
+            try {
+                this._seriesLoader.close();
+                trace(this._seriesLoader + " is closed.");
             } catch (error: Error) {
             }
 

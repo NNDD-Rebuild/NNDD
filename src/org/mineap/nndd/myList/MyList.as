@@ -86,6 +86,8 @@ package org.mineap.nndd.myList {
                     return MyListUtil.getCommunityId(myListUrl);
                 case RssType.USER_UPLOAD_VIDEO:
                     return MyListUtil.getUserUploadVideoListId(myListUrl);
+                case RssType.SERIES:
+                    return MyListUtil.getSeriesId(myListUrl);
                 default:
                     return MyListUtil.getMyListId(myListUrl);
             }
@@ -103,6 +105,8 @@ package org.mineap.nndd.myList {
                     return "community/" + MyListUtil.getMyListId(myListUrl);
                 case RssType.USER_UPLOAD_VIDEO:
                     return "user/" + MyListUtil.getUserUploadVideoListId(myListUrl);
+                case RssType.SERIES:
+                    return "series/" + MyListUtil.getSeriesId(myListUrl);
                 default:
                     return "myList/" + MyListUtil.getMyListId(myListUrl);
             }

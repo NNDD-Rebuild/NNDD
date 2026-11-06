@@ -6748,6 +6748,9 @@ private function myListRenewButtonClicked(event: Event, addMode: Boolean = false
                             case RssType.USER_UPLOAD_VIDEO:
                                 myListId = MyListUtil.getUserUploadVideoListId(url);
                                 break;
+                            case RssType.SERIES:
+                                myListId = MyListUtil.getSeriesId(url);
+                                break;
                             case RssType.MY_LIST:
                                 myListId = MyListUtil.getMyListId(url);
                                 break;
@@ -6975,6 +6978,17 @@ private function myListRenewButtonClicked(event: Event, addMode: Boolean = false
                                 UserManager.instance.user,
                                 UserManager.instance.password,
                                 userId
+                            );
+                            return;
+                        }
+                        break;
+                    case RssType.SERIES:
+                        var seriesId: String = MyListUtil.getSeriesId(url);
+                        if (seriesId != null) {
+                            this._nnddMyListLoader.requestDownloadForSeries(
+                                UserManager.instance.user,
+                                UserManager.instance.password,
+                                seriesId
                             );
                             return;
                         }
@@ -7212,7 +7226,10 @@ private function myListRenewForName(name: String): void {
     textArea_myList.text = "";
     var xml: XML;
     var myListId: String;
-    if (url.indexOf("channel") != -1) {
+    if (MyListUtil.getSeriesId(url) != null) {
+        myListId = MyListUtil.getSeriesId(url);
+        xml = MyListManager.instance.readLocalMyList(myListId, MyListManager.checkType(url));
+    } else if (url.indexOf("channel") != -1) {
         myListId = MyListUtil.getChannelId(url);
         xml = MyListManager.instance.readLocalMyList(myListId, MyListManager.checkType(url));
     } else if (url.indexOf("community") != -1) {
@@ -7700,7 +7717,11 @@ public function showMyListOnNico(event: Event): void {
         return;
     }
 
-    if (id.indexOf("channel") != -1) {
+    if (MyListUtil.getSeriesId(id) != null) {
+        id = MyListUtil.getSeriesId(id);
+        navigateToURL(new URLRequest("https://www.nicovideo.jp/series/" + id));
+        logManager.addLog("シリーズをブラウザで表示:" + "https://www.nicovideo.jp/series/" + id);
+    } else if (id.indexOf("channel") != -1) {
         id = MyListUtil.getChannelId(id);
         if (id != null) {
             navigateToURL(new URLRequest("http://ch.nicovideo.jp/channel/" + id));

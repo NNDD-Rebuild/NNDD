@@ -9,6 +9,8 @@ package org.mineap.nndd.model {
 
         public static const USER_UPLOAD_VIDEO: RssType = new RssType("USER_UPLOAD_VIDEO");
 
+        public static const SERIES: RssType = new RssType("SERIES");
+
         private var value: String = null;
 
         public function RssType(value: String) {
@@ -29,6 +31,8 @@ package org.mineap.nndd.model {
                     return COMMUNITY;
                 case USER_UPLOAD_VIDEO.value:
                     return USER_UPLOAD_VIDEO;
+                case SERIES.value:
+                    return SERIES;
                 default:
                     return null;
             }

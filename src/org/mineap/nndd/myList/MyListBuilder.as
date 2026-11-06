@@ -73,7 +73,9 @@ package org.mineap.nndd.myList {
             var links: XMLList = xml.channel.link;
             if (links.length() > 0) {
                 var url: String = (links[0] as XML).toString();
-                if (MyListUtil.getChannelId(url) != null) {
+                if (MyListUtil.getSeriesId(url) != null) {
+                    type = RssType.SERIES;
+                } else if (MyListUtil.getChannelId(url) != null) {
                     type = RssType.CHANNEL;
                 } else if (MyListUtil.getCommunityId(url) != null) {
                     type = RssType.COMMUNITY;

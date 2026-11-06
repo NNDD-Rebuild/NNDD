@@ -362,6 +362,8 @@ package org.mineap.nndd.myList {
                     myListStr = "community/" + myListId + " " + myList.myListName;
                 } else if (myList.type == RssType.USER_UPLOAD_VIDEO) {
                     myListStr = "user/" + myList.id + " " + myList.myListName;
+                } else if (myList.type == RssType.SERIES) {
+                    myListStr = "series/" + myList.id + " " + myList.myListName;
                 } else {
                     myListStr = "mylist/" + myList.id + " " + myList.myListName;
                 }
@@ -396,6 +398,9 @@ package org.mineap.nndd.myList {
                         break;
                     case RssType.USER_UPLOAD_VIDEO:
                         nnddMyListLoader.requestDownloadForUserVideoList(_mailAddress, _password, myListId);
+                        break;
+                    case RssType.SERIES:
+                        nnddMyListLoader.requestDownloadForSeries(_mailAddress, _password, myListId);
                         break;
                     default:
                         nnddMyListLoader.requestDownloadForMyList(_mailAddress, _password, myListId);
