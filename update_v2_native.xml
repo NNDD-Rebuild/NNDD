@@ -243,9 +243,15 @@
     </dmg>
 
     <exe>
-        <version>5.0.2</version>
-        <url>https://github.com/NNDD-Rebuild/NNDD/releases/download/RE-v5.0.2/NNDD_RE-v5_0_2.exe</url>
+        <version>5.0.3</version>
+        <url>https://github.com/NNDD-Rebuild/NNDD/releases/download/RE-v5.0.3/NNDD_RE-v5_0_3.exe</url>
         <description><![CDATA[
+2026-11-06 RE-v5.0.3
+・ニコニコ側の仕様変更でメールアドレス・パスワードでのログインが使えなくなったため、ブラウザでログイン済みの user_session を取り込む方式に変更
+・ログイン画面に user_session の入力欄、「Firefox から取得」、「Chrome を開く(拡張から送る)」を追加
+・廃止されたAPIを現行のAPIに置き換え(オススメ動画・マイリスト一覧/追加・ユーザー投稿動画・過去ログ取得)
+・接続診断の対象を現行のサーバーに変更し、廃止されたBGM APIの行を削除
+
 2026-10-09 RE-v5.0.2
 ・ニコニコ側API仕様変更(DMSセッション作成APIのactionTrackId検証強化)に伴うストリーミング再生失敗を修正
 
